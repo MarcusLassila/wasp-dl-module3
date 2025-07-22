@@ -9,7 +9,7 @@ def get_sinusoidal_positional_embeddings(t, emb_dim):
     half_dim = emb_dim // 2
     max_positions = int(1e5)
     emb = math.log(max_positions) / (half_dim - 1) # arange(half_dim) / (half_dim - 1) = [0,...,1] 
-    emb = torch.exp(torch.arange(half_dim) * -emb)
+    emb = torch.exp(torch.arange(half_dim) * -emb).to(t.device)
     emb = torch.outer(t, emb)
     emb = torch.cat([torch.sin(emb), torch.cos(emb)], dim=1)
     if emb_dim % 2 == 1:
