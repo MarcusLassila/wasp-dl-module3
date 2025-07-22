@@ -6,7 +6,8 @@ import numpy as np
 import torch
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
-from tqdm.auto import tqdm
+
+import time
 
 class DDPM:
 
@@ -23,29 +24,55 @@ class DDPM:
             base_channels=8,
             dropout=0.0,
             resample_with_conv=True,
-        ) # Predict noise
+        ) # Model that predict noise
         self.model.to(self.device)
-        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=2e-4)
         self.beta = torch.tensor(beta)
         self.T = self.beta.shape[0]
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
 
     def train(self, n_epochs):
-        train_loader, val_loader = self.train_loader, self.val_loader
-        model, optimizer, device, T = self.model, self.optimizer, self.device, self.T
+        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=2e-4)
+        step = 0
         for epoch in range(n_epochs):
-            model.train()
-            for x in tqdm(train_loader, desc=f"Training epoch={epoch}"):
-                x = x.to(device)
-                t = torch.randint(low=0, high=T, size=(x.shape[0],)).to(device)
-                eps = torch.randn(x.shape).to(device)
-                alpha_bar_t = self.alpha_bar[t].view(x.shape[0], 1, 1, 1)
+            self.model.train()
+            t0 = time.time()
+            for x in self.train_loader:
+                x = x.to(self.device)
+                t = torch.randint(low=0, high=self.T, size=(x.shape[0],)).to(self.device)
+                eps = torch.randn(x.shape).to(self.device)
+                alpha_bar_t = self.alpha_bar[t].view(x.shape[0], 1, 1, 1).to(self.device)
                 z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
-                optimizer.zero_grad()
-                noise_pred = model(z, t)
+                self.optimizer.zero_grad()
+                noise_pred = self.model(z, t)
                 loss = F.mse_loss(input=noise_pred, target=eps, reduction="sum")
                 loss.backward()
-                optimizer.step()
+                self.optimizer.step()
+                step += 1
+                t1 = time.time()
+                im_per_sec = x.shape[0] / (t1 - t0)
+                print(f"step: {step} | train loss: {loss.item():.5f} | images per sec: {im_per_sec:.1f}", flush=True)
+                t0 = time.time()
+
+            self.model.eval()
+            with torch.no_grad():
+                val_loss = 0.0
+                for x in self.val_loader:
+                    x.to(self.device)
+                    t = torch.randint(low=0, high=self.T, size=(x.shape[0],)).to(self.device)
+                    eps = torch.randn(x.shape).to(self.device)
+                    alpha_bar_t = self.alpha_bar[t].view(x.shape[0], 1, 1, 1).to(self.device)
+                    z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
+                    noise_pred = self.model(z, t)
+                    loss = F.mse_loss(input=noise_pred, target=eps, reduction="sum")
+                    val_loss += loss.item()
+                val_loss /= len(self.val_loader)
+                print(f"epoch: {epoch} | val loss: {val_loss:.5f}", flush=True)
+        
+        torch.save(self.model.state_dict(), f"models/{self.train_loader.dataset.__class__.__name__}_final_model.pth")
+
+    def load(self, model_name):
+        self.model.load_state_dict(torch.load(model_name))
+        self.model.eval()
 
     def sample(self):
         self.model.eval()
@@ -72,8 +99,8 @@ if __name__ == "__main__":
         device=torch.device("cpu"),
     )
     ddpm.train(1)
+    # ddpm.load("models/CIFAR10_final_model.pth")
     x = next(iter(train_dataset))
     utils.plot_image(x)
     x = ddpm.sample()
-    print(x.shape)
     utils.plot_image(x[0])
