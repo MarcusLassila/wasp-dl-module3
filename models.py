@@ -106,29 +106,30 @@ class ResBlock(nn.Module):
         return y
 
 class UNet(nn.Module):
-    '''Close to the U-net architecture used in the DDPM paper, but differs slightly in number of channels'''
+    '''U-net following the DDPM paper'''
 
     def __init__(self,
                  size, # assume square images with dim = (size, size)
                  in_channels,
                  out_channels,
                  base_channels,
+                 channel_mult,
                  dropout=0.0,
                  resample_with_conv=True,
         ):
         super().__init__()
         if size == 32:
             rescalings_to_16_res = 1
-            n_resolutions = 4
         elif size == 256:
             rescalings_to_16_res = 4
-            n_resolutions = 6
         else:
             raise ValueError("Only size 32x32 and 256x256 are supported")
         n_res_blocks = 2
 
         self.dropout = dropout
         self.base_channels = base_channels
+        self.channel_mult = channel_mult
+
         self.t_emb_channels = 4 * base_channels
         self.t_emb_proj = nn.Sequential(
             nn.Linear(base_channels, self.t_emb_channels),
@@ -137,15 +138,16 @@ class UNet(nn.Module):
         )
 
         self.in_block = nn.Sequential(
-            nn.Conv2d(in_channels=in_channels, out_channels=base_channels // 2, kernel_size=3, padding=1)
+            nn.Conv2d(in_channels=in_channels, out_channels=base_channels, kernel_size=3, padding=1)
         )
 
         self.encoder_blocks = nn.ModuleList()
-        prev_channels = base_channels // 2
+        prev_channels = base_channels
         rescalings = 0
-        for lvl in range(n_resolutions):
+        channel_stack = [prev_channels]
+        for lvl, multiplier in enumerate(channel_mult):
             block = nn.ModuleList()
-            curr_channels = self.base_channels * 2 ** lvl
+            curr_channels = base_channels * multiplier
             for _ in range(n_res_blocks):
                 res_block = ResBlock(
                     in_channels=prev_channels,
@@ -153,12 +155,14 @@ class UNet(nn.Module):
                     t_emb_channels=self.t_emb_channels,
                     dropout=dropout,
                 )
+                channel_stack.append(curr_channels)
                 block.append(res_block)
                 prev_channels = curr_channels
                 if rescalings == rescalings_to_16_res:
                     block.append(AttentionBlock(curr_channels))
-            if lvl < n_resolutions - 1:
+            if lvl < len(channel_mult) - 1:
                 block.append(Downsample(curr_channels, use_conv=resample_with_conv))
+                channel_stack.append(curr_channels)
                 rescalings += 1
             self.encoder_blocks.append(block)
 
@@ -172,18 +176,19 @@ class UNet(nn.Module):
             AttentionBlock(channels=curr_channels),
             ResBlock(
                 in_channels=curr_channels,
-                out_channels=curr_channels*2,
+                out_channels=curr_channels,
                 t_emb_channels=self.t_emb_channels,
                 dropout=dropout,
             ),
         ])
 
         self.decoder_blocks = nn.ModuleList()
-        for lvl in range(n_resolutions - 1, -1, -1):
+        prev_channels = curr_channels
+        for lvl, mult in enumerate(reversed(channel_mult)):
             block = nn.ModuleList()
-            curr_channels = self.base_channels * 2 ** lvl
-            for i in range(n_res_blocks + 1):
-                in_channels = 2 * curr_channels + (curr_channels, 0, -curr_channels // 2)[i]
+            curr_channels = base_channels * mult
+            for _ in range(n_res_blocks + 1):
+                in_channels = prev_channels + channel_stack.pop()
                 res_block = ResBlock(
                     in_channels=in_channels,
                     out_channels=curr_channels,
@@ -191,12 +196,15 @@ class UNet(nn.Module):
                     dropout=dropout,
                 )
                 block.append(res_block)
+                prev_channels = curr_channels
                 if rescalings == rescalings_to_16_res:
                     block.append(AttentionBlock(curr_channels))
-            if lvl > 0:
+            if lvl < len(channel_mult) - 1:
                 block.append(Upsample(curr_channels, use_conv=resample_with_conv))
                 rescalings -= 1
             self.decoder_blocks.append(block)
+
+        assert not channel_stack
 
         self.out_block = nn.Sequential(
             group_norm(curr_channels),

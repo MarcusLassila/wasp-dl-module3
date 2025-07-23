@@ -15,17 +15,21 @@ from pathlib import Path
 
 class DDPM:
 
-    def __init__(self, beta, train_dataset, val_dataset, batch_size, device):
+    def __init__(self, beta, train_dataset, val_dataset, batch_size, device, base_channels=128, dropout=0.0, lr=2e-4):
+        self.input_dim = train_dataset[0].shape
+        assert self.input_dim[1] == self.input_dim[2], "Only square images are supported"
         self.accelerator = accelerate.AcceleratorLite(batch_size=batch_size)
         self.batch_size = batch_size
-        self.input_dim = train_dataset[0].shape
         self.device = device
+        self.base_channels = base_channels
+        self.dropout = dropout
+        self.lr = lr
         self.model = models.UNet(
-            size=32,
-            in_channels=3,
-            out_channels=3,
-            base_channels=128,
-            dropout=0.1,
+            size=self.input_dim[1],
+            in_channels=self.input_dim[0],
+            out_channels=self.input_dim[0],
+            base_channels=base_channels,
+            dropout=dropout,
             resample_with_conv=True,
         ) # Model that predict noise
         self.model, self.train_loader, self.val_loader = self.accelerator.prepare(self.model, train_dataset, val_dataset)
@@ -38,7 +42,7 @@ class DDPM:
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
 
     def train(self, n_epochs):
-        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=2e-4)
+        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
         step = 0
         best_val_loss = float('inf')
         for epoch in range(1, n_epochs + 1):

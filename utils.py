@@ -7,6 +7,8 @@ def plot_image(img, rescale_method="tanh"):
         img = torch.tanh(img)
     elif rescale_method == "clamp":
         img = torch.clamp(img, -1.0, 1.0)
+    elif rescale_method == "none":
+        pass
     else:
         raise ValueError("Unsupported rescale method")
     img = (img + 1) / 2

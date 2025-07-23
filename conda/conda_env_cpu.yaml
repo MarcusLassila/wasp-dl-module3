@@ -14,6 +14,7 @@ dependencies:
 - scipy
 - pandas
 - pip:
+  - datasets
   - requests
   - torchmetrics
   - tqdm
