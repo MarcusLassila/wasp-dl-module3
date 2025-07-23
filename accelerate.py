@@ -14,11 +14,11 @@ class AcceleratorLite:
         self.running_ddp = "RANK" in os.environ
         if self.running_ddp:
             assert torch.cuda.is_available()
-            dist.init_process_group(backend="nccl")
             self.rank = int(os.environ["RANK"])
             self.local_rank = int(os.environ["LOCAL_RANK"])
             self.world_size = int(os.environ["WORLD_SIZE"])
             self.device = torch.device(f"cuda:{self.local_rank}")
+            dist.init_process_group(backend="nccl", init_method="env://", world_size=self.world_size, rank=self.rank)
             torch.cuda.set_device(self.device)
         else:
             self.rank = 0
@@ -61,7 +61,11 @@ class DataLoaderOnDevice:
     def __init__(self, dataloader, device):
         self.dataloader = dataloader
         self.device = device
+        self.dataset_name = dataloader.dataset.__class__.__name__
 
     def __iter__(self):
         for batch in self.dataloader:
             yield batch.to(self.device)
+
+    def __len__(self):
+        return len(self.dataloader)

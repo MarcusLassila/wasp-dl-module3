@@ -29,6 +29,10 @@ class DDPM:
             resample_with_conv=True,
         ) # Model that predict noise
         self.model, self.train_loader, self.val_loader = self.accelerator.prepare(self.model, train_dataset, val_dataset)
+        if self.accelerator.running_ddp:
+            self.raw_model = self.model.module
+        else:
+            self.raw_model = self.model
         self.beta = torch.tensor(beta).to(device)
         self.T = self.beta.shape[0]
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
@@ -41,7 +45,6 @@ class DDPM:
             self.model.train()
             t0 = time.time()
             for x in self.train_loader:
-                x = x.to(self.device)
                 B = x.shape[0]
                 t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
                 eps = torch.randn(x.shape).to(self.device)
@@ -65,7 +68,8 @@ class DDPM:
                     f"step: {step} "
                     f"| train loss: {loss.item() / B:.2f} "
                     f"| grad norm: {norm:.2f} "
-                    f"| images per sec: {im_per_sec:.1f}"
+                    f"| images per sec: {im_per_sec:.1f} "
+                    f"| dt: {t1 - t0:.2f}"
                 )
                 self.accelerator.print(log_msg, flush=True)
                 t0 = time.time()
@@ -74,7 +78,6 @@ class DDPM:
             with torch.no_grad():
                 val_loss = 0.0
                 for x in self.val_loader:
-                    x = x.to(self.device)
                     B = x.shape[0]
                     t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
                     eps = torch.randn(x.shape).to(self.device)
@@ -82,19 +85,19 @@ class DDPM:
                     z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
                     noise_pred = self.model(z, t)
                     loss = F.mse_loss(input=noise_pred, target=eps, reduction="sum")
-                    val_loss += loss.item() / B
+                    val_loss += loss / B
                 val_loss /= len(self.val_loader)
                 if self.accelerator.running_ddp:
                     dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-                self.accelerator.print(f"epoch: {epoch} | val loss: {val_loss:.2f}", flush=True)
+                self.accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.2f}", flush=True)
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    savepath = f"./trained_models/{self.train_loader.dataset.__class__.__name__}_model.pth"
+                    savepath = f"./trained_models/{self.train_loader.dataset_name}_model.pth"
                     Path("./trained_models").mkdir(parents=True, exist_ok=True)
-                    torch.save(self.model.state_dict(), savepath)
+                    torch.save(self.raw_model.state_dict(), savepath)
 
     def load(self, model_name):
-        self.model.load_state_dict(torch.load(model_name, map_location=self.device))
+        self.raw_model.load_state_dict(torch.load(model_name, map_location=self.device))
         self.model.eval()
 
     def sample(self):
@@ -127,8 +130,8 @@ if __name__ == "__main__":
     )
     ddpm.train(10)
     # ddpm.load("./trained_models/CIFAR10_model.pth")
-    x = next(iter(train_dataset))
-    utils.plot_image(x)
-    x = ddpm.sample()
-    for i in range(batch_size):
-        utils.plot_image(x[i])
+    # x = next(iter(train_dataset))
+    # utils.plot_image(x)
+    # x = ddpm.sample()
+    # for i in range(batch_size):
+    #     utils.plot_image(x[i])
