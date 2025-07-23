@@ -1,13 +1,10 @@
 import accelerate
-import data
 import models
 import utils
 
-import numpy as np
 import torch
 import torch.distributed as dist
 import torch.nn.functional as F
-from torch.utils.data import DataLoader
 from tqdm.auto import tqdm
 
 import time
@@ -15,7 +12,17 @@ from pathlib import Path
 
 class DDPM:
 
-    def __init__(self, beta, train_dataset, val_dataset, batch_size, device, base_channels=128, dropout=0.0, lr=2e-4):
+    def __init__(self,
+                 beta,
+                 channel_mult,
+                 train_dataset,
+                 val_dataset,
+                 batch_size,
+                 device,
+                 base_channels=128,
+                 dropout=0.0,
+                 lr=2e-4
+        ):
         self.input_dim = train_dataset[0].shape
         assert self.input_dim[1] == self.input_dim[2], "Only square images are supported"
         self.accelerator = accelerate.AcceleratorLite(batch_size=batch_size)
@@ -29,9 +36,11 @@ class DDPM:
             in_channels=self.input_dim[0],
             out_channels=self.input_dim[0],
             base_channels=base_channels,
+            channel_mult=channel_mult,
             dropout=dropout,
             resample_with_conv=True,
         ) # Model that predict noise
+        print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
         self.model, self.train_loader, self.val_loader = self.accelerator.prepare(self.model, train_dataset, val_dataset)
         if self.accelerator.running_ddp:
             self.raw_model = self.model.module
@@ -118,24 +127,3 @@ class DDPM:
                 noise_pred = self.model(x, t)
                 x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
         return x
-
-if __name__ == "__main__":
-    torch.set_float32_matmul_precision('high')
-    train_dataset = data.CIFAR10(train=True)
-    val_dataset = data.CIFAR10(train=False)
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    batch_size = 128
-    ddpm = DDPM(
-        beta=np.linspace(start=1e-4, stop=0.02, num=1000, dtype=np.float32),
-        train_dataset=train_dataset,
-        val_dataset=val_dataset,
-        batch_size=batch_size,
-        device=device,
-    )
-    ddpm.train(10)
-    # ddpm.load("./trained_models/CIFAR10_model.pth")
-    # x = next(iter(train_dataset))
-    # utils.plot_image(x)
-    # x = ddpm.sample()
-    # for i in range(batch_size):
-    #     utils.plot_image(x[i])
