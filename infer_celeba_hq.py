@@ -2,20 +2,17 @@ import ddpm
 import utils
 
 import torch
-
 import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--save_raw_data", action="store_true")
 args = parser.parse_args()
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-checkpoint = torch.load("./trained_models/CelebAHQ_model.pth", map_location=device)
+checkpoint = torch.load("./trained_models/CelebAHQ_model.pth", map_location="cpu")
 ddpm_obj = ddpm.DDPM(
     beta=checkpoint["beta"],
     channel_mult=checkpoint["channel_mult"],
     image_dim=checkpoint["image_dim"],
-    device=device,
     base_channels=checkpoint["base_channels"],
     dropout=checkpoint["dropout"],
     resample_with_conv=checkpoint["resample_with_conv"],

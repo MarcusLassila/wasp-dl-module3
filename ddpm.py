@@ -17,21 +17,21 @@ class DDPM:
                  beta,
                  channel_mult,
                  image_dim,
-                 device,
                  base_channels=128,
                  dropout=0.0,
                  resample_with_conv=True,
         ):
         self.image_dim = image_dim
         assert self.image_dim[1] == self.image_dim[2], "Only square images are supported"
+        self.accelerator = accelerate.AcceleratorLite(do_compile=False)
+        self.device = self.accelerator.device
         if not torch.is_tensor(beta):
             beta = torch.tensor(beta)
-        self.beta = beta.to(device)
-        self.T = self.beta.shape[0]
+        self.T = beta.shape[0]
+        self.beta = beta.to(self.device)
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
         self.base_channels = base_channels
         self.channel_mult = channel_mult
-        self.device = device
         self.dropout = dropout
         self.resample_with_conv = resample_with_conv
         self.model = models.UNet(
@@ -42,7 +42,7 @@ class DDPM:
             channel_mult=channel_mult,
             dropout=dropout,
             resample_with_conv=resample_with_conv,
-        ) # Model that predict noise
+        ).to(self.device) # Model that predict noise
         print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
 
     def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs):
@@ -53,12 +53,12 @@ class DDPM:
         assert simulated_batch_size % batch_size == 0
         grad_accum_steps = simulated_batch_size // batch_size
 
-        accelerator = accelerate.AcceleratorLite(batch_size=batch_size, do_compile=False)
         if torch.device(self.device).type == "cuda" and torch.cuda.is_available():
             autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         else:
             autocast_context = nullcontext()
 
+        accelerator = self.accelerator
         model, train_loader, val_loader = accelerator.prepare(self.model, train_dataset, val_dataset)
         if accelerator.running_ddp:
             raw_model = model.module
@@ -87,7 +87,7 @@ class DDPM:
                 loss /= grad_accum_steps
                 accum_train_loss += loss.detach()
                 if accelerator.running_ddp:
-                    model.require_backward_grad_sync = (i + 1) % final_grad_accum_step
+                    model.require_backward_grad_sync = final_grad_accum_step
                 loss.backward()
                 if not final_grad_accum_step:
                     continue # Keep accumulating gradients

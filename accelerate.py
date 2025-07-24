@@ -9,8 +9,7 @@ import os
 class AcceleratorLite:
     '''Lightweight Accelerator (Huggingface) like class to handle device placement and distributed training.'''
 
-    def __init__(self, batch_size, do_compile=False):
-        self.batch_size = batch_size
+    def __init__(self, do_compile=False):
         self.do_compile = do_compile
         self.running_ddp = "RANK" in os.environ
         if self.running_ddp:
@@ -34,22 +33,22 @@ class AcceleratorLite:
             self.print("destroying process group")
             dist.destroy_process_group()
 
-    def _get_dataloader(self, dataset):
+    def _get_dataloader(self, dataset, batch_size, shuffle=True):
         if self.running_ddp:
-            train_sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank)
-            dataloader = DataLoader(dataset, batch_size=self.batch_size, sampler=train_sampler)
+            train_sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=shuffle)
+            dataloader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
         else:
-            dataloader = DataLoader(dataset, batch_size=self.batch_size, shuffle=True)
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
         return DataLoaderOnDevice(dataloader, self.device)
 
-    def prepare(self, model, train_dataset, val_dataset):
+    def prepare(self, model, train_dataset, val_dataset, batch_size):
         model.to(self.device)
         if torch.cuda.is_available() and self.do_compile:
             model = torch.compile(model)
         if self.running_ddp:
             model = DDP(model, device_ids=[self.local_rank])
-        train_dataloader = self._get_dataloader(train_dataset)
-        val_dataloader = self._get_dataloader(val_dataset)
+        train_dataloader = self._get_dataloader(train_dataset, batch_size, shuffle=True)
+        val_dataloader = self._get_dataloader(val_dataset, batch_size, shuffle=False)
         return model, train_dataloader, val_dataloader
 
     def print(self, *args, **kwargs):
