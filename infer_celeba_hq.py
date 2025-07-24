@@ -3,9 +3,10 @@ import utils
 
 import torch
 import argparse
+from pathlib import Path
 
 parser = argparse.ArgumentParser()
-parser.add_argument("--save_raw_data", action="store_true")
+parser.add_argument("--save-raw-data", action="store_true")
 args = parser.parse_args()
 
 checkpoint = torch.load("./trained_models/CelebAHQ_model.pth", map_location="cpu")
@@ -21,6 +22,7 @@ ddpm_obj.load(checkpoint["state_dict"])
 batch_size = 16
 gen_batch = ddpm_obj.sample(batch_size)
 if args.save_raw_data:
+    Path("./images").mkdir(parents=True, exist_ok=True)
     torch.save(gen_batch, "./images/image_batch.pth")
 else:
     for i in range(batch_size):

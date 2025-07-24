@@ -59,7 +59,7 @@ class DDPM:
             autocast_context = nullcontext()
 
         accelerator = self.accelerator
-        model, train_loader, val_loader = accelerator.prepare(self.model, train_dataset, val_dataset)
+        model, train_loader, val_loader = accelerator.prepare(self.model, train_dataset, val_dataset, batch_size)
         if accelerator.running_ddp:
             raw_model = model.module
         else:
@@ -108,9 +108,10 @@ class DDPM:
                     f"| train loss: {accum_train_loss.item():.6f} "
                     f"| grad norm: {norm:.2f} "
                     f"| images per sec: {im_per_sec:.1f} "
-                    f"| dt: {t1 - t0:.2f}"
+                    f"| dt: {t1 - t0:.4f}"
                 )
                 accelerator.print(log_msg, flush=True)
+                accum_train_loss = 0.0
                 t0 = time.time()
 
             model.eval()
@@ -154,13 +155,13 @@ class DDPM:
     def sample(self, batch_size):
         self.model.eval()
         with torch.no_grad():
-            x = torch.randn(batch_size, *self.image_dim)
+            x = torch.randn(batch_size, *self.image_dim).to(self.device)
             for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
                 t = torch.tensor([t]).to(self.device)
                 if t > 0:
-                    z = torch.randn(batch_size, *self.image_dim)
+                    z = torch.randn(batch_size, *self.image_dim).to(self.device)
                 else:
-                    z = torch.zeros(size=(batch_size, *self.image_dim))
+                    z = torch.zeros(size=(batch_size, *self.image_dim)).to(self.device)
                 sigma_t = torch.sqrt((1 - self.alpha_bar[t - 1]) * self.beta[t] / (1 - self.alpha_bar[t]))
                 noise_pred = self.model(x, t)
                 x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z

@@ -16,4 +16,4 @@ ddpm.DDPM(
     base_channels=128,
     dropout=0.0,
     resample_with_conv=True,
-).train(train_dataset, val_dataset, batch_size=2, lr=2e-5, n_epochs=3)
+).train(train_dataset, val_dataset, batch_size=16, lr=2e-5, n_epochs=10)
