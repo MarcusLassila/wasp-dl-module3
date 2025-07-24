@@ -16,75 +16,79 @@ class DDPM:
     def __init__(self,
                  beta,
                  channel_mult,
-                 train_dataset,
-                 val_dataset,
-                 batch_size,
+                 image_dim,
                  device,
                  base_channels=128,
                  dropout=0.0,
-                 lr=2e-4,
+                 resample_with_conv=True,
         ):
-        self.input_dim = train_dataset[0].shape
-        assert self.input_dim[1] == self.input_dim[2], "Only square images are supported"
-        self.accelerator = accelerate.AcceleratorLite(batch_size=batch_size, do_compile=False)
-        if torch.device(device).type == "cuda" and torch.cuda.is_available():
-            self.autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
-        else:
-            self.autocast_context = nullcontext
-        self.batch_size = batch_size
-        self.device = device
-        self.base_channels = base_channels
-        self.dropout = dropout
-        self.lr = lr
-        self.model = models.UNet(
-            size=self.input_dim[1],
-            in_channels=self.input_dim[0],
-            out_channels=self.input_dim[0],
-            base_channels=base_channels,
-            channel_mult=channel_mult,
-            dropout=dropout,
-            resample_with_conv=True,
-        ) # Model that predict noise
-        print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
-        self.model, self.train_loader, self.val_loader = self.accelerator.prepare(self.model, train_dataset, val_dataset)
-        if self.accelerator.running_ddp:
-            self.raw_model = self.model.module
-        else:
-            self.raw_model = self.model
+        self.image_dim = image_dim
+        assert self.image_dim[1] == self.image_dim[2], "Only square images are supported"
         if not torch.is_tensor(beta):
             beta = torch.tensor(beta)
         self.beta = beta.to(device)
         self.T = self.beta.shape[0]
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
+        self.base_channels = base_channels
+        self.channel_mult = channel_mult
+        self.device = device
+        self.dropout = dropout
+        self.resample_with_conv = resample_with_conv
+        self.model = models.UNet(
+            image_size=self.image_dim[1],
+            in_channels=self.image_dim[0],
+            out_channels=self.image_dim[0],
+            base_channels=base_channels,
+            channel_mult=channel_mult,
+            dropout=dropout,
+            resample_with_conv=resample_with_conv,
+        ) # Model that predict noise
+        print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
 
-    def train(self, n_epochs):
-        self.optimizer = torch.optim.Adam(params=self.model.parameters(), lr=self.lr)
+    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs):
+        input_dim = train_dataset[0].shape
+        assert input_dim == self.image_dim
+
+        accelerator = accelerate.AcceleratorLite(batch_size=batch_size, do_compile=False)
+        if torch.device(self.device).type == "cuda" and torch.cuda.is_available():
+            autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        else:
+            autocast_context = nullcontext()
+
+        model, train_loader, val_loader = accelerator.prepare(self.model, train_dataset, val_dataset)
+        if accelerator.running_ddp:
+            raw_model = model.module
+        else:
+            raw_model = model
+
+        optimizer = torch.optim.Adam(params=model.parameters(), lr=lr)
+
         step = 0
         best_val_loss = float('inf')
         for epoch in range(1, n_epochs + 1):
-            self.model.train()
+            model.train()
             t0 = time.time()
-            for x in self.train_loader:
+            for x in train_loader:
                 B = x.shape[0]
                 t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
                 eps = torch.randn(x.shape).to(self.device)
                 alpha_bar_t = self.alpha_bar[t].view(B, 1, 1, 1)
                 z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
-                self.optimizer.zero_grad()
-                with self.autocast_context:
-                    noise_pred = self.model(z, t)
+                optimizer.zero_grad()
+                with autocast_context:
+                    noise_pred = model(z, t)
                     loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
                 loss.backward()
-                norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
-                self.optimizer.step()
+                norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
+                optimizer.step()
                 loss = loss.detach()
                 step += 1
-                if self.accelerator.running_ddp:
+                if accelerator.running_ddp:
                     dist.all_reduce(loss, op=dist.ReduceOp.AVG)
                 if torch.cuda.is_available():
                     torch.cuda.synchronize()
                 t1 = time.time()
-                im_per_sec = B * self.accelerator.world_size / (t1 - t0)
+                im_per_sec = B * accelerator.world_size / (t1 - t0)
                 log_msg = (
                     f"step: {step} "
                     f"| train loss: {loss.item():.6f} "
@@ -92,46 +96,57 @@ class DDPM:
                     f"| images per sec: {im_per_sec:.1f} "
                     f"| dt: {t1 - t0:.2f}"
                 )
-                self.accelerator.print(log_msg, flush=True)
+                accelerator.print(log_msg, flush=True)
                 t0 = time.time()
 
-            self.model.eval()
+            model.eval()
             with torch.no_grad():
                 val_loss = 0.0
-                for x in self.val_loader:
+                for x in val_loader:
                     B = x.shape[0]
                     t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
                     eps = torch.randn(x.shape).to(self.device)
                     alpha_bar_t = self.alpha_bar[t].view(B, 1, 1, 1)
                     z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
-                    with self.autocast_context:
-                        noise_pred = self.model(z, t)
+                    with autocast_context:
+                        noise_pred = model(z, t)
                         loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
                     val_loss += loss
-                val_loss /= len(self.val_loader)
-                if self.accelerator.running_ddp:
+                val_loss /= len(val_loader)
+                if accelerator.running_ddp:
                     dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-                self.accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.6f}", flush=True)
+                accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.6f}", flush=True)
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
-                    savepath = f"./trained_models/{self.train_loader.dataset_name}_model.pth"
                     Path("./trained_models").mkdir(parents=True, exist_ok=True)
-                    torch.save(self.raw_model.state_dict(), savepath)
+                    savepath = Path(f"./trained_models/{train_dataset.__class__.__name__}_model.pth")
+                    checkpoint = {
+                        "state_dict": raw_model.state_dict(),
+                        "beta": self.beta,
+                        "channel_mult": self.channel_mult,
+                        "base_channels": self.base_channels,
+                        "image_dim": self.image_dim,
+                        "dropout": self.dropout,
+                        "resample_with_conv": self.resample_with_conv,
+                        "epoch": epoch,
+                    }
+                    torch.save(checkpoint, savepath)
 
-    def load(self, model_name):
-        self.raw_model.load_state_dict(torch.load(model_name, map_location=self.device))
+    def load(self, state_dict):
+        state_dict = {k: v.to(self.device) for k, v in state_dict.items()}
+        self.model.load_state_dict(state_dict)
         self.model.eval()
 
-    def sample(self):
+    def sample(self, batch_size):
         self.model.eval()
         with torch.no_grad():
-            x = torch.randn(self.batch_size, *self.input_dim)
-            for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {self.batch_size} images"):
+            x = torch.randn(batch_size, *self.image_dim)
+            for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
                 t = torch.tensor([t]).to(self.device)
                 if t > 0:
-                    z = torch.randn(self.batch_size, *self.input_dim)
+                    z = torch.randn(batch_size, *self.image_dim)
                 else:
-                    z = torch.zeros(size=(self.batch_size, *self.input_dim))
+                    z = torch.zeros(size=(batch_size, *self.image_dim))
                 sigma_t = torch.sqrt((1 - self.alpha_bar[t - 1]) * self.beta[t] / (1 - self.alpha_bar[t]))
                 noise_pred = self.model(x, t)
                 x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z

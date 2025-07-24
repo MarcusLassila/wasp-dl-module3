@@ -109,7 +109,7 @@ class UNet(nn.Module):
     '''U-net following the DDPM paper'''
 
     def __init__(self,
-                 size, # assume square images with dim = (size, size)
+                 image_size, # assume square images with dim = (size, size)
                  in_channels,
                  out_channels,
                  base_channels,
@@ -118,12 +118,12 @@ class UNet(nn.Module):
                  resample_with_conv=True,
         ):
         super().__init__()
-        if size == 32:
+        if image_size == 32:
             rescalings_to_16_res = 1
-        elif size == 256:
+        elif image_size == 256:
             rescalings_to_16_res = 4
         else:
-            raise ValueError("Only size 32x32 and 256x256 are supported")
+            raise ValueError("Only image size 32x32 and 256x256 are supported")
         n_res_blocks = 2
 
         self.dropout = dropout

@@ -62,7 +62,6 @@ class DataLoaderOnDevice:
     def __init__(self, dataloader, device):
         self.dataloader = dataloader
         self.device = device
-        self.dataset_name = dataloader.dataset.__class__.__name__
 
     def __iter__(self):
         for batch in self.dataloader:
