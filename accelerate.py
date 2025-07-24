@@ -9,8 +9,9 @@ import os
 class AcceleratorLite:
     '''Lightweight Accelerator (Huggingface) like class to handle device placement and distributed training.'''
 
-    def __init__(self, batch_size):
+    def __init__(self, batch_size, do_compile=False):
         self.batch_size = batch_size
+        self.do_compile = do_compile
         self.running_ddp = "RANK" in os.environ
         if self.running_ddp:
             assert torch.cuda.is_available()
@@ -43,7 +44,7 @@ class AcceleratorLite:
 
     def prepare(self, model, train_dataset, val_dataset):
         model.to(self.device)
-        if torch.cuda.is_available():
+        if torch.cuda.is_available() and self.do_compile:
             model = torch.compile(model)
         if self.running_ddp:
             model = DDP(model, device_ids=[self.local_rank])

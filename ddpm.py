@@ -8,6 +8,7 @@ import torch.nn.functional as F
 from tqdm.auto import tqdm
 
 import time
+from contextlib import nullcontext
 from pathlib import Path
 
 class DDPM:
@@ -21,11 +22,15 @@ class DDPM:
                  device,
                  base_channels=128,
                  dropout=0.0,
-                 lr=2e-4
+                 lr=2e-4,
         ):
         self.input_dim = train_dataset[0].shape
         assert self.input_dim[1] == self.input_dim[2], "Only square images are supported"
-        self.accelerator = accelerate.AcceleratorLite(batch_size=batch_size)
+        self.accelerator = accelerate.AcceleratorLite(batch_size=batch_size, do_compile=False)
+        if torch.device(device).type == "cuda" and torch.cuda.is_available():
+            self.autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+        else:
+            self.autocast_context = nullcontext
         self.batch_size = batch_size
         self.device = device
         self.base_channels = base_channels
@@ -46,7 +51,9 @@ class DDPM:
             self.raw_model = self.model.module
         else:
             self.raw_model = self.model
-        self.beta = torch.tensor(beta).to(device)
+        if not torch.is_tensor(beta):
+            beta = torch.tensor(beta)
+        self.beta = beta.to(device)
         self.T = self.beta.shape[0]
         self.alpha_bar = torch.cumprod(1 - self.beta, dim=0)
 
@@ -64,8 +71,9 @@ class DDPM:
                 alpha_bar_t = self.alpha_bar[t].view(B, 1, 1, 1)
                 z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
                 self.optimizer.zero_grad()
-                noise_pred = self.model(z, t)
-                loss = F.mse_loss(input=noise_pred, target=eps, reduction="sum")
+                with self.autocast_context:
+                    noise_pred = self.model(z, t)
+                    loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
                 loss.backward()
                 norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
                 self.optimizer.step()
@@ -79,7 +87,7 @@ class DDPM:
                 im_per_sec = B * self.accelerator.world_size / (t1 - t0)
                 log_msg = (
                     f"step: {step} "
-                    f"| train loss: {loss.item() / B:.2f} "
+                    f"| train loss: {loss.item():.6f} "
                     f"| grad norm: {norm:.2f} "
                     f"| images per sec: {im_per_sec:.1f} "
                     f"| dt: {t1 - t0:.2f}"
@@ -96,13 +104,14 @@ class DDPM:
                     eps = torch.randn(x.shape).to(self.device)
                     alpha_bar_t = self.alpha_bar[t].view(B, 1, 1, 1)
                     z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
-                    noise_pred = self.model(z, t)
-                    loss = F.mse_loss(input=noise_pred, target=eps, reduction="sum")
-                    val_loss += loss / B
+                    with self.autocast_context:
+                        noise_pred = self.model(z, t)
+                        loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
+                    val_loss += loss
                 val_loss /= len(self.val_loader)
                 if self.accelerator.running_ddp:
                     dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-                self.accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.2f}", flush=True)
+                self.accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.6f}", flush=True)
                 if val_loss < best_val_loss:
                     best_val_loss = val_loss
                     savepath = f"./trained_models/{self.train_loader.dataset_name}_model.pth"
