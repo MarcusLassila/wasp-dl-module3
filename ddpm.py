@@ -20,10 +20,11 @@ class DDPM:
                  base_channels=128,
                  dropout=0.0,
                  resample_with_conv=True,
+                 do_compile=False,
         ):
         self.image_dim = image_dim
         assert self.image_dim[1] == self.image_dim[2], "Only square images are supported"
-        self.accelerator = accelerate.AcceleratorLite(do_compile=False)
+        self.accelerator = accelerate.AcceleratorLite(do_compile=do_compile)
         self.device = self.accelerator.device
         if not torch.is_tensor(beta):
             beta = torch.tensor(beta)
@@ -45,11 +46,10 @@ class DDPM:
         ).to(self.device) # Model that predict noise
         print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
 
-    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs):
+    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs, simulated_batch_size=64):
         input_dim = train_dataset[0].shape
         assert input_dim == self.image_dim
 
-        simulated_batch_size = 64
         assert simulated_batch_size % batch_size == 0
         grad_accum_steps = simulated_batch_size // batch_size
 

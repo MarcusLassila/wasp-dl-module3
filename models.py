@@ -17,7 +17,7 @@ def get_sinusoidal_positional_embeddings(t, emb_dim):
     assert emb.shape == (n_emb, emb_dim)
     return emb
 
-def group_norm(channels, n_groups=4):
+def group_norm(channels, n_groups=32):
     return nn.GroupNorm(num_groups=n_groups, num_channels=channels)
 
 class AttentionBlock(nn.Module):
