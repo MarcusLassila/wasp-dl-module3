@@ -46,12 +46,12 @@ class DDPM:
         ).to(self.device) # Model that predict noise
         print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
 
-    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs, simulated_batch_size=64):
+    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs, simul_batch_size=64):
         input_dim = train_dataset[0].shape
         assert input_dim == self.image_dim
 
-        assert simulated_batch_size % batch_size == 0
-        grad_accum_steps = simulated_batch_size // batch_size
+        assert simul_batch_size % batch_size == 0
+        grad_accum_steps = simul_batch_size // batch_size
 
         if torch.device(self.device).type == "cuda" and torch.cuda.is_available():
             autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
@@ -152,17 +152,16 @@ class DDPM:
         self.model.load_state_dict(state_dict)
         self.model.eval()
 
+    @torch.no_grad()
     def sample(self, batch_size):
         self.model.eval()
-        with torch.no_grad():
-            x = torch.randn(batch_size, *self.image_dim).to(self.device)
-            for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
-                t = torch.tensor([t]).to(self.device)
-                if t > 0:
-                    z = torch.randn(batch_size, *self.image_dim).to(self.device)
-                else:
-                    z = torch.zeros(size=(batch_size, *self.image_dim)).to(self.device)
-                sigma_t = torch.sqrt((1 - self.alpha_bar[t - 1]) * self.beta[t] / (1 - self.alpha_bar[t]))
-                noise_pred = self.model(x, t)
-                x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
+        x = torch.randn(batch_size, *self.image_dim).to(self.device)
+        for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
+            if t > 0:
+                z = torch.randn(batch_size, *self.image_dim).to(self.device)
+            else:
+                z = torch.zeros(size=(batch_size, *self.image_dim)).to(self.device)
+            sigma_t = torch.sqrt(self.beta[t])
+            noise_pred = self.model(x, t * torch.ones(batch_size, dtype=torch.long).to(self.device))
+            x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
         return x
