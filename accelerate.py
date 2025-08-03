@@ -26,30 +26,24 @@ class AcceleratorLite:
             self.world_size = 1
             self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         self.is_master_process = self.rank == 0
-        self.device_type = "cuda" if torch.cuda.is_available() else "cpu"
 
     def __del__(self):
         if self.running_ddp:
             self.print("destroying process group")
             dist.destroy_process_group()
 
-    def _get_dataloader(self, dataset, batch_size, shuffle=True):
-        if self.running_ddp:
-            train_sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=shuffle)
-            dataloader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler)
-        else:
-            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=shuffle)
-        return DataLoaderOnDevice(dataloader, self.device)
-
-    def prepare(self, model, train_dataset, val_dataset, batch_size):
+    def prepare(self, model, dataset, batch_size):
         model.to(self.device)
         if torch.cuda.is_available() and self.do_compile:
             model = torch.compile(model)
         if self.running_ddp:
             model = DDP(model, device_ids=[self.local_rank])
-        train_dataloader = self._get_dataloader(train_dataset, batch_size, shuffle=True)
-        val_dataloader = self._get_dataloader(val_dataset, batch_size, shuffle=False)
-        return model, train_dataloader, val_dataloader
+            train_sampler = DistributedSampler(dataset, num_replicas=self.world_size, rank=self.rank, shuffle=True)
+            dataloader = DataLoader(dataset, batch_size=batch_size, sampler=train_sampler, pin_memory=True)
+        else:
+            dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, pin_memory=True)
+        dataloader = DataLoaderOnDevice(dataloader, self.device)
+        return model, dataloader
 
     def print(self, *args, **kwargs):
         if self.is_master_process:

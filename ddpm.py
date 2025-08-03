@@ -7,6 +7,7 @@ import torch.distributed as dist
 import torch.nn.functional as F
 from tqdm.auto import tqdm
 
+import inspect
 import time
 from contextlib import nullcontext
 from pathlib import Path
@@ -45,36 +46,38 @@ class DDPM:
             resample_with_conv=resample_with_conv,
         ).to(self.device) # Model that predict noise
         print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
+        print(f"Num trainabe parameters: {utils.count_params(self.model)['n_trainable_params']:_}")
 
-    def train(self, train_dataset, val_dataset, batch_size, lr, n_epochs, simul_batch_size=64):
-        input_dim = train_dataset[0].shape
+    def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64):
+        input_dim = dataset[0].shape
         assert input_dim == self.image_dim
 
         assert simul_batch_size % batch_size == 0
         grad_accum_steps = simul_batch_size // batch_size
 
-        if torch.device(self.device).type == "cuda" and torch.cuda.is_available():
+        if self.device.type == "cuda" and torch.cuda.is_available():
             autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
         else:
             autocast_context = nullcontext()
 
         accelerator = self.accelerator
-        model, train_loader, val_loader = accelerator.prepare(self.model, train_dataset, val_dataset, batch_size)
+        model, dataloader = accelerator.prepare(self.model, dataset, batch_size)
         if accelerator.running_ddp:
             raw_model = model.module
         else:
             raw_model = model
 
-        optimizer = torch.optim.Adam(params=model.parameters(), lr=lr)
+        # Use fused AdamW (Adam with weight decay)
+        use_fused = "fused" in inspect.signature(torch.optim.AdamW).parameters and self.device.type == "cuda"
+        optimizer = torch.optim.AdamW(params=model.parameters(), lr=lr, fused=use_fused)
 
         step = 0
-        best_val_loss = float('inf')
         for epoch in range(1, n_epochs + 1):
             model.train()
             optimizer.zero_grad()
             accum_train_loss = 0.0
             t0 = time.time()
-            for i, x in enumerate(train_loader):
+            for i, x in enumerate(dataloader):
                 final_grad_accum_step = (i + 1) % grad_accum_steps == 0
                 B = x.shape[0]
                 t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
@@ -114,38 +117,19 @@ class DDPM:
                 accum_train_loss = 0.0
                 t0 = time.time()
 
-            model.eval()
-            with torch.no_grad():
-                val_loss = 0.0
-                for x in val_loader:
-                    B = x.shape[0]
-                    t = torch.randint(low=0, high=self.T, size=(B,)).to(self.device)
-                    eps = torch.randn(x.shape).to(self.device)
-                    alpha_bar_t = self.alpha_bar[t].view(B, 1, 1, 1)
-                    z = torch.sqrt(alpha_bar_t) * x + torch.sqrt(1 - alpha_bar_t) * eps
-                    with autocast_context:
-                        noise_pred = model(z, t)
-                        loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
-                    val_loss += loss
-                val_loss /= len(val_loader)
-                if accelerator.running_ddp:
-                    dist.all_reduce(val_loss, op=dist.ReduceOp.AVG)
-                accelerator.print(f"epoch: {epoch} | val loss: {val_loss.item():.6f}", flush=True)
-                if val_loss < best_val_loss:
-                    best_val_loss = val_loss
-                    Path("./trained_models").mkdir(parents=True, exist_ok=True)
-                    savepath = Path(f"./trained_models/{train_dataset.__class__.__name__}_model.pth")
-                    checkpoint = {
-                        "state_dict": raw_model.state_dict(),
-                        "beta": self.beta,
-                        "channel_mult": self.channel_mult,
-                        "base_channels": self.base_channels,
-                        "image_dim": self.image_dim,
-                        "dropout": self.dropout,
-                        "resample_with_conv": self.resample_with_conv,
-                        "epoch": epoch,
-                    }
-                    torch.save(checkpoint, savepath)
+            if epoch % 10 == 0 or epoch == n_epochs:
+                Path("./trained_models").mkdir(parents=True, exist_ok=True)
+                savepath = Path(f"./trained_models/{dataset.__class__.__name__}_model.pth")
+                checkpoint = {
+                    "state_dict": raw_model.state_dict(),
+                    "beta": self.beta,
+                    "channel_mult": self.channel_mult,
+                    "base_channels": self.base_channels,
+                    "image_dim": self.image_dim,
+                    "dropout": self.dropout,
+                    "resample_with_conv": self.resample_with_conv,
+                }
+                torch.save(checkpoint, savepath)
 
     def load(self, state_dict):
         state_dict = {k: v.to(self.device) for k, v in state_dict.items()}
