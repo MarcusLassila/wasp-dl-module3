@@ -48,17 +48,23 @@ class DDPM:
         print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
         print(f"Num trainabe parameters: {utils.count_params(self.model)['n_trainable_params']:_}")
 
-    def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64):
+    def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64, grad_clip=1.0):
         input_dim = dataset[0].shape
         assert input_dim == self.image_dim
 
-        assert simul_batch_size % batch_size == 0
+        assert simul_batch_size % (batch_size * self.accelerator.world_size) == 0
         grad_accum_steps = simul_batch_size // batch_size
+        if grad_accum_steps == 1:
+            print("No gradient accumulation")
+        else:
+            print(f"Gradient accumulation steps: {grad_accum_steps}")
 
-        if self.device.type == "cuda" and torch.cuda.is_available():
+        if self.device.type == "cuda":
             autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
+            scaler = torch.GradScaler(device="cuda")
         else:
             autocast_context = nullcontext()
+            scaler = torch.GradScaler(device="cpu", enabled=False)
 
         accelerator = self.accelerator
         model, dataloader = accelerator.prepare(self.model, dataset, batch_size)
@@ -91,15 +97,18 @@ class DDPM:
                 accum_train_loss += loss.detach()
                 if accelerator.running_ddp:
                     model.require_backward_grad_sync = final_grad_accum_step
-                loss.backward()
+                scaler.scale(loss).backward()
                 if not final_grad_accum_step:
                     continue # Keep accumulating gradients
 
                 # Gradient accumulation done, update parameters and log
                 if accelerator.running_ddp:
                     dist.all_reduce(accum_train_loss, op=dist.ReduceOp.AVG)
-                norm = torch.nn.utils.clip_grad_norm_(model.parameters(), 1.0)
-                optimizer.step()
+                if grad_clip != 0.0:
+                    scaler.unscale_(optimizer)
+                    norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
+                scaler.step(optimizer)
+                scaler.update()
                 optimizer.zero_grad()
                 if torch.cuda.is_available():
                     torch.cuda.synchronize() # Syncronize processes before measuring t1
