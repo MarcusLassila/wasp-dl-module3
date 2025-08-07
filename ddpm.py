@@ -45,19 +45,20 @@ class DDPM:
             dropout=dropout,
             resample_with_conv=resample_with_conv,
         ).to(self.device) # Model that predict noise
-        print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
-        print(f"Num trainabe parameters: {utils.count_params(self.model)['n_trainable_params']:_}")
+        self.accelerator.print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
+        self.accelerator.print(f"Num trainabe parameters: {utils.count_params(self.model)['n_trainable_params']:_}")
 
     def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64, grad_clip=1.0):
+        accelerator = self.accelerator
         input_dim = dataset[0].shape
         assert input_dim == self.image_dim
 
-        assert simul_batch_size % (batch_size * self.accelerator.world_size) == 0
-        grad_accum_steps = simul_batch_size // batch_size
+        assert simul_batch_size % (batch_size * accelerator.world_size) == 0
+        grad_accum_steps = simul_batch_size // (batch_size * accelerator.world_size)
         if grad_accum_steps == 1:
-            print("No gradient accumulation")
+            accelerator.print("No gradient accumulation")
         else:
-            print(f"Gradient accumulation steps: {grad_accum_steps}")
+            accelerator.print(f"Gradient accumulation steps: {grad_accum_steps}")
 
         if self.device.type == "cuda":
             autocast_context = torch.autocast(device_type="cuda", dtype=torch.bfloat16)
@@ -66,7 +67,6 @@ class DDPM:
             autocast_context = nullcontext()
             scaler = torch.GradScaler(device="cpu", enabled=False)
 
-        accelerator = self.accelerator
         model, dataloader = accelerator.prepare(self.model, dataset, batch_size)
         if accelerator.running_ddp:
             raw_model = model.module
