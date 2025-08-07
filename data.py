@@ -50,7 +50,7 @@ class Flowers(Dataset):
     def __init__(self):
         self.transforms = T.Compose([
             T.RandomHorizontalFlip(p=0.5),
-            T.Resize((64, 64),
+            T.Resize((32, 32),
                      interpolation=T.InterpolationMode.BICUBIC,
                      antialias=True),
             T.ToTensor(),
@@ -71,9 +71,9 @@ def inverse_transform(tensors):
     return ((tensors.clamp(-1, 1) + 1.0) / 2.0) * 255.0
 
 if __name__ == "__main__":
-    flowers = Flowers()
-    print(len(flowers))
+    dataset = CIFAR10()
+    print(len(dataset))
     import utils
-    img = flowers[0]
+    img = dataset[1]
     print(img.min(), img.max(), img.shape)
     utils.plot_image(img, rescale_method="none")

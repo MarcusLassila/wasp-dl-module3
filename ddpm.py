@@ -9,8 +9,10 @@ from tqdm.auto import tqdm
 
 import inspect
 import time
+from collections import defaultdict
 from contextlib import nullcontext
 from pathlib import Path
+from statistics import mean
 
 class DDPM:
 
@@ -75,13 +77,15 @@ class DDPM:
 
         # Use fused AdamW (Adam with weight decay)
         use_fused = "fused" in inspect.signature(torch.optim.AdamW).parameters and self.device.type == "cuda"
+        accelerator.print(f"Using fused AdamW: {use_fused}")
         optimizer = torch.optim.AdamW(params=model.parameters(), lr=lr, fused=use_fused)
 
         step = 0
+        log_dict = defaultdict(list)
         for epoch in range(1, n_epochs + 1):
             model.train()
             optimizer.zero_grad()
-            accum_train_loss = 0.0
+            accum_loss = 0.0
             t0 = time.time()
             for i, x in enumerate(dataloader):
                 final_grad_accum_step = (i + 1) % grad_accum_steps == 0
@@ -94,7 +98,7 @@ class DDPM:
                     noise_pred = model(z, t)
                     loss = F.mse_loss(input=noise_pred, target=eps, reduction="mean")
                 loss /= grad_accum_steps
-                accum_train_loss += loss.detach()
+                accum_loss += loss.detach()
                 if accelerator.running_ddp:
                     model.require_backward_grad_sync = final_grad_accum_step
                 scaler.scale(loss).backward()
@@ -103,7 +107,7 @@ class DDPM:
 
                 # Gradient accumulation done, update parameters and log
                 if accelerator.running_ddp:
-                    dist.all_reduce(accum_train_loss, op=dist.ReduceOp.AVG)
+                    dist.all_reduce(accum_loss, op=dist.ReduceOp.AVG)
                 if grad_clip != 0.0:
                     scaler.unscale_(optimizer)
                     norm = torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -115,22 +119,32 @@ class DDPM:
                 t1 = time.time()
                 step += 1
                 im_per_sec = B * accelerator.world_size / (t1 - t0)
-                log_msg = (
-                    f"step: {step} "
-                    f"| train loss: {accum_train_loss.item():.6f} "
-                    f"| grad norm: {norm:.2f} "
-                    f"| images per sec: {im_per_sec:.1f} "
-                    f"| dt: {t1 - t0:.4f}"
-                )
-                accelerator.print(log_msg, flush=True)
-                accum_train_loss = 0.0
+                log_dict["accum_loss"].append(accum_loss.item())
+                log_dict["grad_norm"].append(norm)
+                log_dict["im_per_sec"].append(im_per_sec)
+                log_dict["step_time"].append(t1 - t0)
+                if step % 20 == 0:
+                    assert len(log_dict["accum_loss"]) == 20
+                    log_msg = (
+                        f"step: {step} "
+                        f"| loss: {mean(log_dict["accum_loss"]):.6f} "
+                        f"| grad norm: {mean(log_dict["norm"]):.2f} "
+                        f"| images per sec: {mean(log_dict["im_per_sec"]):.1f} "
+                        f"| time per step: {mean(log_dict['step_time']):.4f}"
+                    )
+                    accelerator.print(log_msg, flush=True)
+                    log_dict = defaultdict(list)
+                accum_loss = 0.0
                 t0 = time.time()
 
             if epoch % 10 == 0 or epoch == n_epochs:
                 Path("./trained_models").mkdir(parents=True, exist_ok=True)
                 savepath = Path(f"./trained_models/{dataset.__class__.__name__}_model.pth")
                 checkpoint = {
-                    "state_dict": raw_model.state_dict(),
+                    "epoch": epoch,
+                    "model_state_dict": raw_model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "scaler_state_dict": scaler.state_dict(),
                     "beta": self.beta,
                     "channel_mult": self.channel_mult,
                     "base_channels": self.base_channels,

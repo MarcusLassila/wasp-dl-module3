@@ -6,10 +6,12 @@ import argparse
 from pathlib import Path
 
 parser = argparse.ArgumentParser()
+parser.add_argument("--batch-size", default=16, type=int)
+parser.add_argument("--model", type=str, required=True)
 parser.add_argument("--save-raw-data", action="store_true")
 args = parser.parse_args()
 
-checkpoint = torch.load("./trained_models/CelebAHQ_model.pth", map_location="cpu")
+checkpoint = torch.load(f"./trained_models/{args.model}.pth", map_location="cpu")
 ddpm_obj = ddpm.DDPM(
     beta=checkpoint["beta"],
     channel_mult=checkpoint["channel_mult"],
@@ -18,8 +20,8 @@ ddpm_obj = ddpm.DDPM(
     dropout=checkpoint["dropout"],
     resample_with_conv=checkpoint["resample_with_conv"],
 )
-ddpm_obj.load(checkpoint["state_dict"])
-batch_size = 16
+ddpm_obj.load(checkpoint["model_state_dict"])
+batch_size = args.batch_size
 gen_batch = ddpm_obj.sample(batch_size)
 if args.save_raw_data:
     Path("./images").mkdir(parents=True, exist_ok=True)
