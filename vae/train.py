@@ -25,11 +25,12 @@ def train_vae(model, dataloader, epochs, device, lr):
             loss.backward()
             optimizer.step()
             step += 1
+            loss_item = loss.item()
             t1 = time.time()
             images_per_sec = B / (t1 - t0)
-            log_msg = f"step: {step}/{total_steps} | loss: {loss.item():.6f} | images per sec: {images_per_sec:.1f} | batch time: {t1 - t0:.2f}"
+            log_msg = f"step: {step}/{total_steps} | loss: {loss_item:.6f} | images per sec: {images_per_sec:.1f} | batch time: {t1 - t0:.2f}"
+            print(log_msg, flush=True)
             t0 = time.time()
-            print(log_msg)
         model_checkpoint = {
             "model_state_dict": model.state_dict(),
             "in_dim": model.in_dim,
@@ -41,12 +42,13 @@ def train_vae(model, dataloader, epochs, device, lr):
 
 if __name__ == "__main__":
     batch_size = 128
-    epochs = 1
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    epochs = 2
     lr = 1e-3
     hidden_dim = 500
     latent_dim = 50
-    
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    print(f"Using device: {device}")
+
     dataset = data.MNIST()
     dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
     in_dim = prod(dataset[0].shape)

@@ -52,7 +52,9 @@ class VAE(nn.Module):
         log_likelihood = MultivariateNormal(dec_mean, dec_cov).log_prob(x)
         return (kl_div + log_likelihood).mean()
     
+    @torch.no_grad()
     def generate(self, batch_size):
-        noise = torch.randn(batch_size, self.latent_dim).to(self.device)
+        device = next(self.decoder.parameters()).device
+        noise = torch.randn(batch_size, self.latent_dim).to(device)
         samples = self.decode(noise)
         return samples
