@@ -5,20 +5,11 @@ from torch.distributions import MultivariateNormal
 
 class GaussianMLP(nn.Module):
     
-    def __init__(self, in_features, hidden_units, out_features, use_sigmoid=False):
+    def __init__(self, in_dim, hidden_dim, latent_dim):
         super().__init__()
-        self.in_features = in_features
-        self.hidden_units = hidden_units
-        self.out_features = out_features
-        self.lin_emb = nn.Linear(in_features, hidden_units)
-        if use_sigmoid:
-            self.lin_mean = nn.Sequential(
-                nn.Linear(hidden_units, out_features),
-                nn.Sigmoid(),
-            )
-        else:
-            self.lin_mean = nn.Linear(hidden_units, out_features)
-        self.lin_logvar = nn.Linear(hidden_units, out_features)
+        self.lin_emb = nn.Linear(in_dim, hidden_dim)
+        self.lin_mean = nn.Linear(hidden_dim, latent_dim)
+        self.lin_logvar = nn.Linear(hidden_dim, latent_dim)
         
     def forward(self, x):
         h = self.lin_emb(x)
@@ -26,7 +17,7 @@ class GaussianMLP(nn.Module):
         mean = self.lin_mean(h)
         logvar = self.lin_logvar(h)
         cov = torch.diag_embed(logvar.exp())
-        z = MultivariateNormal(mean, cov).rsample().sigmoid()
+        z = MultivariateNormal(mean, cov).rsample()
         return z, mean, logvar
 
 class VAE(nn.Module):
@@ -36,8 +27,13 @@ class VAE(nn.Module):
         self.in_dim = in_dim
         self.hidden_dim = hidden_dim
         self.latent_dim = latent_dim
-        self.encoder = GaussianMLP(in_dim, hidden_dim, latent_dim, use_sigmoid=False)
-        self.decoder = GaussianMLP(latent_dim, hidden_dim, in_dim, use_sigmoid=True) # Sigmoid to restrict mean and output to [0,1]
+        self.encoder = GaussianMLP(in_dim, hidden_dim, latent_dim)
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, hidden_dim),
+            nn.ReLU(),
+            nn.Linear(hidden_dim, in_dim),
+            nn.Sigmoid(),
+        )
 
     def forward(self, x):
         return self.decode(self.encode(x))
@@ -47,15 +43,13 @@ class VAE(nn.Module):
         return z
     
     def decode(self, z):
-        x, _, _ = self.decoder(z)
-        return x
+        return self.decoder(z)
 
     def elbo(self, x):
         z, enc_mean, enc_logvar = self.encoder(x)
         kl_div = 0.5 * (1 + enc_logvar - enc_mean ** 2 - torch.exp(enc_logvar)).sum(dim=1)
-        _, dec_mean, dec_logvar = self.decoder(z)
-        dec_cov = torch.diag_embed(dec_logvar.exp()) 
-        log_likelihood = MultivariateNormal(dec_mean, dec_cov).log_prob(x)
+        y = self.decode(z)
+        log_likelihood = -F.binary_cross_entropy(input=y, target=x, reduction="sum")
         return (kl_div + log_likelihood).mean()
     
     @torch.no_grad()
