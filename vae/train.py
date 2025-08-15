@@ -42,7 +42,7 @@ def train_vae(model, dataloader, epochs, device, lr):
 
 if __name__ == "__main__":
     batch_size = 128
-    epochs = 5
+    epochs = 20
     lr = 1e-3
     hidden_dim = 512
     latent_dim = 64
