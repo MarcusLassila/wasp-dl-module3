@@ -1,3 +1,4 @@
 ### WASP deep learning course, module 3
 
-Denoising diffusion probabilistic model (DDPM) for image generation.
+Implementation of denoising diffusion probabilistic model (DDPM) and a variational auto-encoder (VAE) for image generation.
+Run scripts from the repo root folder since the paths are not absolute.

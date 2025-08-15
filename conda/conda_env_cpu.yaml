@@ -1,4 +1,4 @@
-name: DDPM-cpu
+name: dl-module3-cpu
 channels:
 - pytorch
 - conda-forge

@@ -1,4 +1,4 @@
-name: DDPM-gpu
+name: dl-module3-cpu
 channels:
 - conda-forge
 - defaults
