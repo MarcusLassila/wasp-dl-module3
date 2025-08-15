@@ -50,7 +50,7 @@ class DDPM:
         self.accelerator.print(f"Using a U-net model with {utils.count_params(self.model)['n_params']:_} parameters")
         self.accelerator.print(f"Num trainabe parameters: {utils.count_params(self.model)['n_trainable_params']:_}")
 
-    def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64, grad_clip=1.0):
+    def train(self, dataset, batch_size, lr, n_epochs, simul_batch_size=64, grad_clip=1.0, steps_per_print=50):
         accelerator = self.accelerator
         input_dim = dataset[0].shape
         assert input_dim == self.image_dim
@@ -120,16 +120,16 @@ class DDPM:
                 step += 1
                 im_per_sec = B * accelerator.world_size / (t1 - t0)
                 log_dict["accum_loss"].append(accum_loss.item())
-                log_dict["grad_norm"].append(norm)
+                log_dict["grad_norm"].append(norm.item())
                 log_dict["im_per_sec"].append(im_per_sec)
                 log_dict["step_time"].append(t1 - t0)
-                if step % 20 == 0:
-                    assert len(log_dict["accum_loss"]) == 20
+                if step % steps_per_print == 0:
+                    assert len(log_dict["accum_loss"]) == steps_per_print
                     log_msg = (
                         f"step: {step} "
-                        f"| loss: {mean(log_dict["accum_loss"]):.6f} "
-                        f"| grad norm: {mean(log_dict["norm"]):.2f} "
-                        f"| images per sec: {mean(log_dict["im_per_sec"]):.1f} "
+                        f"| loss: {mean(log_dict['accum_loss']):.6f} "
+                        f"| grad norm: {mean(log_dict['grad_norm']):.2f} "
+                        f"| images per sec: {mean(log_dict['im_per_sec']):.1f} "
                         f"| time per step: {mean(log_dict['step_time']):.4f}"
                     )
                     accelerator.print(log_msg, flush=True)
