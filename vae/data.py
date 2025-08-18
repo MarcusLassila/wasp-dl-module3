@@ -5,14 +5,12 @@ from torch.utils.data import ConcatDataset, DataLoader, Dataset
 
 class MNIST(Dataset):
     
-    def __init__(self):
+    def __init__(self, train=True):
         self.transform = T.Compose([
             T.ToTensor(),
         ])
-        self.dataset = ConcatDataset([
-            datasets.MNIST(root='./data', train=True, download=True, transform=self.transform),
-            datasets.MNIST(root='./data', train=False, download=True, transform=self.transform),
-        ])
+        self.train = train
+        self.dataset = datasets.MNIST(root='./data', train=train, download=True, transform=self.transform)
 
     def __getitem__(self, index):
         item, _ = self.dataset[index] # Discard labels
