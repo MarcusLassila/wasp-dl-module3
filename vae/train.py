@@ -14,6 +14,7 @@ def train_vae(model, dataloader, epochs, device, lr):
     optimizer = AdamW(model.parameters(), lr=lr)
     step = 0
     total_steps = epochs * len(dataloader)
+    train_loss = []
     for _ in range(epochs):
         t0 = time.time()
         for x in dataloader:
@@ -26,24 +27,28 @@ def train_vae(model, dataloader, epochs, device, lr):
             optimizer.step()
             step += 1
             loss_item = loss.item()
+            train_loss.append(loss_item)
             t1 = time.time()
-            images_per_sec = B / (t1 - t0)
-            log_msg = f"step: {step}/{total_steps} | loss: {loss_item:.6f} | images per sec: {images_per_sec:.1f} | batch time: {t1 - t0:.2f}"
-            print(log_msg, flush=True)
+            if step % 20 == 0:
+                images_per_sec = B / (t1 - t0)
+                avg_loss = torch.tensor(train_loss[-10:]).mean().item()
+                log_msg = f"step: {step}/{total_steps} | loss: {avg_loss:.6f} | images per sec: {images_per_sec:.1f} | batch time: {t1 - t0:.2f}"
+                print(log_msg, flush=True)
             t0 = time.time()
         model_checkpoint = {
             "model_state_dict": model.state_dict(),
             "in_dim": model.in_dim,
             "hidden_dim": model.hidden_dim,
             "latent_dim": model.latent_dim,
+            "train_loss": train_loss,
         }
-        Path("../trained_models").mkdir(parents=True, exist_ok=True)
+        Path("./trained_models").mkdir(parents=True, exist_ok=True)
         torch.save(model_checkpoint, "./trained_models/VAE_model.pth")
 
 if __name__ == "__main__":
-    batch_size = 128
-    epochs = 10
-    lr = 1e-3
+    batch_size = 2048
+    epochs = 200
+    lr = 3e-4
     hidden_dim = 512
     latent_dim = 64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

@@ -49,7 +49,7 @@ class VAE(nn.Module):
         z, enc_mean, enc_logvar = self.encoder(x)
         kl_div = 0.5 * (1 + enc_logvar - enc_mean ** 2 - torch.exp(enc_logvar)).sum(dim=1)
         y = self.decode(z)
-        log_likelihood = -F.binary_cross_entropy(input=y, target=x, reduction="sum")
+        log_likelihood = -F.binary_cross_entropy(input=y, target=x, reduction="none").sum(dim=1) # sum the vector components, but not the batch dimension
         return (kl_div + log_likelihood).mean()
     
     @torch.no_grad()
