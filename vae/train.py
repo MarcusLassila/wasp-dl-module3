@@ -22,7 +22,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr):
         for x in tqdm(train_dataloader, disable=device.type=="cuda", desc=f"epoch: {epoch}"):
             optimizer.zero_grad()
             x = x.to(device)
-            loss = -model.elbo(x)
+            loss = model.loss(x)
             loss.backward()
             optimizer.step()
             loss_item = loss.item()
@@ -38,7 +38,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr):
         with torch.no_grad():
             for x in val_dataloader:
                 x = x.to(device)
-                loss = -model.elbo(x)
+                loss = model.loss(x)
                 acc_val_loss += loss.item()
         val_loss.append(acc_val_loss / len(val_dataloader))
 
@@ -62,8 +62,8 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr):
 
 if __name__ == "__main__":
     batch_size = 128
-    epochs = 20
-    lr = 3e-4
+    epochs = 5
+    lr = 1e-3
     hidden_dim = 512
     latent_dim = 64
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

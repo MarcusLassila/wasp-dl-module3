@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.distributions import MultivariateNormal
 
 class EncoderMLP(nn.Module):
 
@@ -98,13 +97,13 @@ class VAE(nn.Module):
     def decode(self, z):
         return self.decoder(z)
 
-    def elbo(self, x):
+    def loss(self, x):
         enc_mean, enc_logvar = self.encoder(x)
         kl_div = -0.5 * torch.sum(1 + enc_logvar - enc_mean ** 2 - enc_logvar.exp())
         z = VAE.rsample(enc_mean, enc_logvar)
         y = self.decode(z)
-        log_likelihood = -F.mse_loss(input=y, target=x, reduction="sum")
-        return (-kl_div + log_likelihood) / x.shape[0]
+        nll = F.mse_loss(input=y, target=x, reduction="sum")
+        return (kl_div + nll) / x.shape[0]
 
     @torch.no_grad()
     def generate(self, batch_size):
@@ -115,6 +114,6 @@ class VAE(nn.Module):
 
     @staticmethod
     def rsample(mean, logvar):
-        cov = torch.diag_embed(logvar.exp())
-        z = MultivariateNormal(mean, cov).rsample()
-        return z
+        std = torch.exp(0.5 * logvar)
+        eps = torch.randn_like(std)
+        return mean + std * eps
