@@ -61,11 +61,10 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr):
         torch.save(model_checkpoint, "./trained_models/VAE_model.pth")
 
 if __name__ == "__main__":
-    batch_size = 128
+    batch_size = 64
     epochs = 5
     lr = 1e-3
-    hidden_dim = 512
-    latent_dim = 64
+    latent_dim = 128
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 

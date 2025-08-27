@@ -2,6 +2,7 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions import Independent, Normal
 
 class EncoderMLP(nn.Module):
 
@@ -113,12 +114,13 @@ class VAE(nn.Module):
 
     def loss(self, x):
         enc_mean, enc_logvar = self.encoder(x)
-        kl_div = -0.5 * torch.sum(1 + enc_logvar - enc_mean ** 2 - enc_logvar.exp())
+        kl_div = -0.5 * torch.sum(1 + enc_logvar - enc_mean ** 2 - enc_logvar.exp(), dim=1)
         z = VAE.rsample(enc_mean, enc_logvar)
         dec_mean, dec_logvar = self.decoder(z)
-        k = np.prod(x.shape)
-        nll = 0.5 * (k * np.log(2 * np.pi) + dec_logvar.sum() + (torch.exp(-1.0 * dec_logvar) * (x - dec_mean) ** 2).sum())
-        return (kl_div + nll) / x.shape[0]
+        normal_dist = Normal(dec_mean, torch.exp(0.5 * dec_logvar))
+        log_likelihood = Independent(normal_dist, reinterpreted_batch_ndims=3).log_prob(x)
+        assert log_likelihood.shape == kl_div.shape == (x.shape[0],)
+        return (kl_div - log_likelihood).mean()
 
     @torch.no_grad()
     def generate(self, batch_size):
