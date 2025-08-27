@@ -7,6 +7,7 @@ class MNIST(Dataset):
 
     def __init__(self, train=True):
         self.transform = T.Compose([
+            T.Resize(32), # Resize to 32 for architectural convenience
             T.ToTensor(),
         ])
         self.train = train
@@ -36,7 +37,7 @@ class CIFAR10(Dataset):
         return len(self.dataset)
 
 if __name__ == "__main__":
-    dataset = CIFAR10()
+    dataset = MNIST()
     sample = dataset[0]
     print(sample.shape)
     import matplotlib.pyplot as plt

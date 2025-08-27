@@ -40,9 +40,10 @@ class EncoderCNN(nn.Module):
             nn.ReLU(),
             nn.Conv2d(in_channels=32, out_channels=64, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
+            nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1),
             nn.Flatten(),
         )
-        self.hidden_dim = 64 * (in_dim // 4) ** 2
+        self.hidden_dim = 128 * (in_dim // 8) ** 2
         self.lin_mean = nn.Linear(self.hidden_dim, latent_dim)
         self.lin_logvar = nn.Linear(self.hidden_dim, latent_dim)
 
@@ -56,9 +57,11 @@ class DecoderCNN(nn.Module):
 
     def __init__(self, out_channels, latent_dim, hidden_dim):
         super().__init__()
-        self.size = int((hidden_dim // 64) ** 0.5)
+        self.size = int((hidden_dim // 128) ** 0.5)
         self.latent_proj = nn.Linear(latent_dim, hidden_dim)
         self.deconv = nn.Sequential(
+            nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1),
+            nn.ReLU(),
             nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
             nn.ConvTranspose2d(in_channels=32, out_channels=out_channels, kernel_size=4, stride=2, padding=1),
@@ -66,13 +69,14 @@ class DecoderCNN(nn.Module):
         )
 
     def forward(self, x):
-        h = self.latent_proj(x).view(x.shape[0], 64, self.size, self.size)
+        h = self.latent_proj(x).view(x.shape[0], 128, self.size, self.size)
         return self.deconv(h)
 
 class VAE(nn.Module):
 
     def __init__(self, in_channels, in_dim, latent_dim):
         super().__init__()
+        assert in_dim % 8 == 0
         self.in_channels = in_channels
         self.in_dim = in_dim
         self.latent_dim = latent_dim
