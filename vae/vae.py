@@ -1,3 +1,4 @@
+import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -43,9 +44,9 @@ class EncoderCNN(nn.Module):
             nn.Conv2d(in_channels=64, out_channels=128, kernel_size=4, stride=2, padding=1),
             nn.Flatten(),
         )
-        self.hidden_dim = 128 * (in_dim // 8) ** 2
-        self.lin_mean = nn.Linear(self.hidden_dim, latent_dim)
-        self.lin_logvar = nn.Linear(self.hidden_dim, latent_dim)
+        hidden_dim = 128 * (in_dim // 8) ** 2
+        self.lin_mean = nn.Linear(hidden_dim, latent_dim)
+        self.lin_logvar = nn.Linear(hidden_dim, latent_dim)
 
     def forward(self, x):
         h = self.conv_emb(x)
@@ -55,22 +56,30 @@ class EncoderCNN(nn.Module):
 
 class DecoderCNN(nn.Module):
 
-    def __init__(self, out_channels, latent_dim, hidden_dim):
+    def __init__(self, out_channels, latent_dim, image_dim):
         super().__init__()
-        self.size = int((hidden_dim // 128) ** 0.5)
+        self.out_channels = out_channels
+        self.image_dim = image_dim
+        hidden_dim = 128 * (image_dim // 8) ** 2
         self.latent_proj = nn.Linear(latent_dim, hidden_dim)
         self.deconv = nn.Sequential(
             nn.ConvTranspose2d(in_channels=128, out_channels=64, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
             nn.ConvTranspose2d(in_channels=64, out_channels=32, kernel_size=4, stride=2, padding=1),
             nn.ReLU(),
+        )
+        self.deconv_mean = nn.Sequential(
             nn.ConvTranspose2d(in_channels=32, out_channels=out_channels, kernel_size=4, stride=2, padding=1),
             nn.Sigmoid(),
         )
+        self.deconv_logvar = nn.ConvTranspose2d(in_channels=32, out_channels=out_channels, kernel_size=4, stride=2, padding=1)
 
     def forward(self, x):
-        h = self.latent_proj(x).view(x.shape[0], 128, self.size, self.size)
-        return self.deconv(h)
+        h = self.latent_proj(x).view(x.shape[0], 128, self.image_dim // 8, self.image_dim // 8)
+        h = self.deconv(h)
+        mean = self.deconv_mean(h)
+        logvar = self.deconv_logvar(h)
+        return mean, logvar
 
 class VAE(nn.Module):
 
@@ -88,7 +97,7 @@ class VAE(nn.Module):
         self.decoder = DecoderCNN(
             out_channels=in_channels,
             latent_dim=latent_dim,
-            hidden_dim=self.encoder.hidden_dim,
+            image_dim=in_dim,
         )
 
     def forward(self, x):
@@ -99,14 +108,16 @@ class VAE(nn.Module):
         return VAE.rsample(mean, logvar)
     
     def decode(self, z):
-        return self.decoder(z)
+        mean, logvar = self.decoder(z)
+        return VAE.rsample(mean, logvar)
 
     def loss(self, x):
         enc_mean, enc_logvar = self.encoder(x)
         kl_div = -0.5 * torch.sum(1 + enc_logvar - enc_mean ** 2 - enc_logvar.exp())
         z = VAE.rsample(enc_mean, enc_logvar)
-        y = self.decode(z)
-        nll = F.mse_loss(input=y, target=x, reduction="sum")
+        dec_mean, dec_logvar = self.decoder(z)
+        k = np.prod(x.shape)
+        nll = 0.5 * (k * np.log(2 * np.pi) + dec_logvar.sum() + (torch.exp(-1.0 * dec_logvar) * (x - dec_mean) ** 2).sum())
         return (kl_div + nll) / x.shape[0]
 
     @torch.no_grad()
