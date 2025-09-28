@@ -159,16 +159,21 @@ class DDPM:
         self.model.load_state_dict(state_dict)
         self.model.eval()
 
-    @torch.no_grad()
-    def sample(self, batch_size):
+    @torch.inference_mode()
+    def sample(self, n_samples, batch_size):
         self.model.eval()
-        x = torch.randn(batch_size, *self.image_dim).to(self.device)
-        for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
-            if t > 0:
-                z = torch.randn(batch_size, *self.image_dim).to(self.device)
-            else:
-                z = torch.zeros(size=(batch_size, *self.image_dim)).to(self.device)
-            sigma_t = torch.sqrt(self.beta[t])
-            noise_pred = self.model(x, t * torch.ones(batch_size, dtype=torch.long).to(self.device))
-            x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
-        return x
+        quotient, remainder = divmod(n_samples, batch_size)
+        samples = []
+        for i in range(quotient + 1):
+            B = remainder if i == quotient else batch_size
+            x = torch.randn(B, *self.image_dim).to(self.device)
+            for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {B} images"):
+                if t > 0:
+                    z = torch.randn(B, *self.image_dim).to(self.device)
+                else:
+                    z = torch.zeros(size=(B, *self.image_dim)).to(self.device)
+                sigma_t = torch.sqrt(self.beta[t])
+                noise_pred = self.model(x, t * torch.ones(B, dtype=torch.long).to(self.device))
+                x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
+            samples.append(x)
+        return torch.stack(samples)

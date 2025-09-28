@@ -19,5 +19,6 @@ dependencies:
   - tensorflow-datasets
   - requests
   - torchmetrics
+  - torch-fidelity
   - tqdm
   - PyYAML

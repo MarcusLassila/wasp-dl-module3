@@ -16,6 +16,7 @@ dependencies:
   - tb-nightly
   - tensorflow>=2.16
   - tensorflow-datasets
+  - torch-fidelity
   - pillow
   - ipywidgets
   - einops
