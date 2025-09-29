@@ -1,5 +1,5 @@
 import data
-from ddpm import ddpm, utils
+from ddpm import ddpm
 from vae import vae
 
 import torch
@@ -11,12 +11,6 @@ from tqdm.auto import tqdm
 
 import argparse
 
-def sample_transformation(model_name, gen_samples):
-    if model_name == "DDPM":
-        gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
-        gen_samples = (gen_samples + 1) / 2.0
-    return gen_samples
-
 def fid_score(model, data_loader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
     total_samples = 0
@@ -26,8 +20,9 @@ def fid_score(model, data_loader, device):
         real_samples = real_samples.to(torch.float64).to(device)
         real_samples = F.interpolate(real_samples, size=(299,299), mode="bilinear", align_corners=False)
         gen_samples = model.sample(batch_size).to(torch.float64)
-        utils.plot_images(gen_samples[:16], name="temp_fid_samples")
-        gen_samples = sample_transformation(model.__class__.__name__, gen_samples)
+        if model.__class__.__name__ == "DDPM":
+            gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
+            gen_samples = (gen_samples + 1) / 2.0
         gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
         fid.update(real_samples, real=True)
         fid.update(gen_samples, real=False)
@@ -79,6 +74,8 @@ if __name__ == "__main__":
 
     if args.dataset == "cifar10":
         dataset = data.CIFAR10_1()
+    elif args.dataset == "cifar10-test":
+        dataset = data.CIFAR10()
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
