@@ -1,6 +1,4 @@
-import accelerate
-import models
-import utils
+from . import accelerate, models, utils
 
 import torch
 import torch.distributed as dist

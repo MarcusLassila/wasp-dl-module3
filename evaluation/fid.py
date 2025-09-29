@@ -1,5 +1,5 @@
 import data
-import ddpm
+from ddpm import ddpm
 from vae import vae
 
 import torch
@@ -7,13 +7,14 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torchmetrics.image.fid import FrechetInceptionDistance
+from tqdm.auto import tqdm
 
 import argparse
 
 def fid_score(model, data_loader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
     total_samples = 0
-    for real_samples in data_loader:
+    for real_samples in tqdm(data_loader, desc="Generate samples"):
         batch_size = real_samples.shape[0]
         total_samples += batch_size
         real_samples = real_samples.to(torch.float64).to(device)
@@ -22,6 +23,7 @@ def fid_score(model, data_loader, device):
         gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
         fid.update(real_samples, real=True)
         fid.update(gen_samples, real=False)
+    print("Computing FID...")
     score = fid.compute()
     print(f"FID score: {score:.5f}")
     print(f"Total samples: {total_samples}")
@@ -49,7 +51,7 @@ if __name__ == "__main__":
 
     checkpoint = torch.load(f"./trained_models/{args.model}_{args.dataset}_model.pth", map_location=device)
     if args.model == "ddpm":
-        model = ddpm.ddpm.DDPM(
+        model = ddpm.DDPM(
             beta=checkpoint["beta"],
             channel_mult=checkpoint["channel_mult"],
             image_dim=checkpoint["image_dim"],
@@ -63,9 +65,9 @@ if __name__ == "__main__":
             in_dim=checkpoint["in_dim"],
             latent_dim=checkpoint["latent_dim"],
         )
+        model.to(device)
     else:
         raise ValueError(f"Unsupported model: {args.model}")
-    model.to(device)
 
     if args.dataset == "cifar10":
         dataset = data.CIFAR10_1()
