@@ -2,3 +2,5 @@
 
 Implementation of denoising diffusion probabilistic model (DDPM) and a variational auto-encoder (VAE) for image generation.
 Run scripts from the repo root folder since the paths are not absolute.
+
+Run "source setup.sh" to add repo root to PYTHONPATH and install pyproject.

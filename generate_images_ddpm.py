@@ -1,5 +1,4 @@
-import ddpm
-import utils
+from ddpm import ddpm, utils
 
 import torch
 import argparse
