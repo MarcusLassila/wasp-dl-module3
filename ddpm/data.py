@@ -1,6 +1,5 @@
 import numpy as np
 import torch
-import tensorflow_datasets as tfds
 from datasets import load_dataset
 from torchvision import datasets
 from torchvision import transforms as T
@@ -26,24 +25,6 @@ class CIFAR10(Dataset):
     def __len__(self):
         return len(self.dataset)
     
-class CIFAR10_1(Dataset):
-
-    def __init__(self, transform=None):
-        # Load CIFAR-10.1 v6 (~2,000 images)
-        ds = tfds.load("cifar10_1/v6", split="test", as_supervised=True)
-
-        self.dataset = torch.from_numpy(np.array([x for x, _ in tfds.as_numpy(ds)])).permute(0, 3, 1, 2)  # (N,3,32,32)
-        self.transform = transform
-
-    def __getitem__(self, index):
-        item = self.dataset[index]
-        if self.transform is not None:
-            item = self.transform(item)
-        return item
-
-    def __len__(self):
-        return len(self.dataset)
-
 class CelebAHQ(Dataset):
 
     def __init__(self):
@@ -85,11 +66,3 @@ class Flowers(Dataset):
 
     def __len__(self):
         return len(self.dataset)
-
-if __name__ == "__main__":
-    dataset = CIFAR10_1()
-    print(len(dataset))
-    import utils
-    img = dataset[1]
-    print(img.min(), img.max(), img.shape)
-    utils.plot_image(img, rescale_method="none")

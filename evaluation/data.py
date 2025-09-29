@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torchvision.datasets as datasets
 import torchvision.transforms as T
 from torch.utils.data import Dataset
 import os, requests
@@ -58,3 +59,19 @@ class CIFAR10_1(Dataset):
         if self.return_labels:
             return x, self.labels[idx]
         return x
+
+class CIFAR10(Dataset):
+    '''Test set of CIFAR10'''
+
+    def __init__(self):
+        self.transform = T.Compose([
+            T.ToTensor(),
+        ])
+        self.dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=self.transform)
+
+    def __getitem__(self, index):
+        item, _ = self.dataset[index] # Discard labels
+        return item
+
+    def __len__(self):
+        return len(self.dataset)

@@ -29,5 +29,3 @@ if args.save_raw_data:
 else:
     for i in range(batch_size):
         utils.plot_image(gen_batch[i], rescale_method="clamp", name=f"clamped_{i}")
-    for i in range(batch_size):
-        utils.plot_image(gen_batch[i], rescale_method="tanh", name=f"tanhed_{i}")

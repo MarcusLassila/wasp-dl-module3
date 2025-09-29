@@ -11,6 +11,12 @@ from tqdm.auto import tqdm
 
 import argparse
 
+def sample_transformation(model_name, gen_samples):
+    if model_name == "DDPM":
+        gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
+        gen_samples = (gen_samples + 1) / 2.0
+    return gen_samples
+
 def fid_score(model, data_loader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
     total_samples = 0
@@ -20,6 +26,7 @@ def fid_score(model, data_loader, device):
         real_samples = real_samples.to(torch.float64).to(device)
         real_samples = F.interpolate(real_samples, size=(299,299), mode="bilinear", align_corners=False)
         gen_samples = model.sample(batch_size)
+        gen_samples = sample_transformation(model.__class__.__name__, gen_samples)
         gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
         fid.update(real_samples, real=True)
         fid.update(gen_samples, real=False)
@@ -74,7 +81,7 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
-    n_samples = 1000
+    n_samples = 2000
     dataset = Subset(dataset, torch.arange(n_samples))
     data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     fid_score(model, data_loader, device)
