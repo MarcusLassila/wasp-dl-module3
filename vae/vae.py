@@ -129,18 +129,12 @@ class VAE(nn.Module):
         return self.per_sample_loss(x).mean()
 
     @torch.inference_mode()
-    def sample(self, n_samples, batch_size):
-        '''Sample from the learned data distribution.'''
+    def sample(self, batch_size):
+        '''Sample a batch from the learned data distribution.'''
         device = next(self.decoder.parameters()).device
-        samples = []
-        quotient, remainder = divmod(n_samples, batch_size)
-        for _ in range(quotient):
-            noise = torch.randn(batch_size, self.latent_dim).to(device)
-            samples.append(self.decode(noise).cpu())
-        if remainder != 0:
-            noise = torch.randn(remainder, self.latent_dim).to(device)
-            samples.append(self.decode(noise).cpu())
-        return torch.concat(samples, dim=0)
+        noise = torch.randn(batch_size, self.latent_dim).to(device)
+        samples = self.decode(noise)
+        return samples
 
     @staticmethod
     def rsample(mean, logvar):

@@ -15,8 +15,6 @@ dependencies:
 - pandas
 - pip:
   - datasets
-  - tensorflow>=2.16
-  - tensorflow-datasets
   - requests
   - torchmetrics
   - torch-fidelity

@@ -3,29 +3,28 @@ import ddpm
 from vae import vae
 
 import torch
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torchmetrics.image.fid import FrechetInceptionDistance
 
 import argparse
 
-def fid_score(real_images, generated_images, device):
-    real_images.to(torch.float64)
-    generated_images.to(torch.float64)
+def fid_score(model, data_loader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
-    real_images = F.interpolate(real_images, size=(299,299), mode="bilinear", align_corners=False)
-    fid.update(real_images, real=True)
-    generated_images = F.interpolate(generated_images, size=(299,299), mode="bilinear", align_corners=False)
-    fid.update(generated_images, real=False)
+    total_samples = 0
+    for real_samples in data_loader:
+        batch_size = real_samples.shape[0]
+        total_samples += batch_size
+        real_samples = real_samples.to(torch.float64).to(device)
+        real_samples = F.interpolate(real_samples, size=(299,299), mode="bilinear", align_corners=False)
+        gen_samples = model.sample(batch_size)
+        gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
+        fid.update(real_samples, real=True)
+        fid.update(gen_samples, real=False)
     score = fid.compute()
-    return score
-
-def evaluate(model, real_images, batch_size, device):
-    n_samples = real_images.shape[0]
-    samples = model.sample(n_samples, batch_size)
-    score = fid_score(real_images, samples, device)
     print(f"FID score: {score:.5f}")
+    print(f"Total samples: {total_samples}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -47,6 +46,7 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
     checkpoint = torch.load(f"./trained_models/{args.model}_{args.dataset}_model.pth", map_location=device)
     if args.model == "ddpm":
         model = ddpm.ddpm.DDPM(
@@ -73,5 +73,6 @@ if __name__ == "__main__":
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
     n_samples = 1000
-    real_images = next(iter(DataLoader(dataset, batch_size=n_samples, shuffle=True)))
-    evaluate(model, real_images, args.batch_size, device)
+    dataset = Subset(dataset, torch.arange(n_samples))
+    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
+    fid_score(model, data_loader, device)
