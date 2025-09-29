@@ -176,4 +176,5 @@ class DDPM:
                 noise_pred = self.model(x, t * torch.ones(B, dtype=torch.long).to(self.device))
                 x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
             samples.append(x)
+        assert len(samples) == n_samples
         return torch.stack(samples)

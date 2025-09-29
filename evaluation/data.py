@@ -10,7 +10,7 @@ class CIFAR10_1(Dataset):
         # Load CIFAR-10.1 v6 (~2,000 images)
         ds = tfds.load("cifar10_1/v6", split="test", as_supervised=True)
 
-        self.dataset = torch.from_numpy(np.array([x for x, _ in tfds.as_numpy(ds)])).permute(0, 3, 1, 2)  # (N,3,32,32)
+        self.dataset = torch.from_numpy(np.array([x for x, _ in tfds.as_numpy(ds)])).permute(0, 3, 1, 2).float() / 255  # (N,3,32,32)
         self.transform = transform
 
     def __getitem__(self, index):

@@ -51,31 +51,31 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr):
         print(log_msg, flush=True)
         model_checkpoint = {
             "model_state_dict": model.state_dict(),
-            "in_channels": model.in_channels,
+            "in_ch": model.in_ch,
             "in_dim": model.in_dim,
             "latent_dim": model.latent_dim,
             "train_loss": train_loss,
             "val_loss": val_loss,
         }
         Path("./trained_models").mkdir(parents=True, exist_ok=True)
-        torch.save(model_checkpoint, "./trained_models/VAE_model.pth")
+        torch.save(model_checkpoint, f"./trained_models/vae_{train_dataloader.dataset.__class__.__name__.lower()}_model_latest.pth")
 
 if __name__ == "__main__":
-    batch_size = 128
-    epochs = 500
+    batch_size = 256
+    epochs = 200
     lr = 1e-3
     latent_dim = 128
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print(f"Using device: {device}")
 
-    train_dataset = data.MNIST(train=True)
-    test_dataset = data.MNIST(train=False)
+    train_dataset = data.CIFAR10(train=True)
+    test_dataset = data.CIFAR10(train=False)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
     channels, height, width = train_dataset[0].shape
     assert height == width
     
-    model = vae.VAE(in_channels=channels, in_dim=height, latent_dim=latent_dim)
+    model = vae.VAE(in_ch=channels, in_dim=height, latent_dim=latent_dim)
     train_vae(
         model=model,
         train_dataloader=train_dataloader,

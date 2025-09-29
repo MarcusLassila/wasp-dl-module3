@@ -26,6 +26,7 @@ class CIFAR10(Dataset):
 
     def __init__(self, train=True):
         self.transform = T.Compose([
+            T.RandomHorizontalFlip(p=0.5),
             T.ToTensor(),
         ])
         self.train = train

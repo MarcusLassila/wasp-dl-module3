@@ -22,3 +22,4 @@ dependencies:
   - torch-fidelity
   - tqdm
   - PyYAML
+  - huggingface_hub

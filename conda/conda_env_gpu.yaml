@@ -1,4 +1,4 @@
-name: dl-module3-cpu
+name: dl-module3-gpu
 channels:
 - conda-forge
 - defaults
@@ -12,16 +12,13 @@ dependencies:
 - scipy
 - pandas
 - pip:
-  - future
-  - tb-nightly
   - tensorflow>=2.16
   - tensorflow-datasets
+  - torchmetrics
   - torch-fidelity
-  - pillow
-  - ipywidgets
-  - einops
   - transformers
   - datasets
   - --extra-index-url https://download.pytorch.org/whl/cu118
   - torch==2.3.1+cu118
   - torchvision==0.18.1+cu118
+  - huggingface_hub

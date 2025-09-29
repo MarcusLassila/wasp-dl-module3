@@ -1,14 +1,18 @@
 import data
 import ddpm
-import vae
+from vae import vae
 
 import torch
-from torchmetrics.image.fid import FrechetInceptionDistance
+from torch.utils.data import DataLoader
 import torch.nn.functional as F
+import torchvision.transforms as T
+from torchmetrics.image.fid import FrechetInceptionDistance
 
 import argparse
 
 def fid_score(real_images, generated_images, device):
+    real_images.to(torch.float64)
+    generated_images.to(torch.float64)
     fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
     real_images = F.interpolate(real_images, size=(299,299), mode="bilinear", align_corners=False)
     fid.update(real_images, real=True)
@@ -17,10 +21,10 @@ def fid_score(real_images, generated_images, device):
     score = fid.compute()
     return score
 
-def evaluate(model, dataset, device, num_samples=100):
-    assert num_samples <= len(dataset)
-    samples = model.sample(num_samples)
-    score = fid_score(dataset[:num_samples], samples, device)
+def evaluate(model, real_images, batch_size, device):
+    n_samples = real_images.shape[0]
+    samples = model.sample(n_samples, batch_size)
+    score = fid_score(real_images, samples, device)
     print(f"FID score: {score:.5f}")
 
 if __name__ == "__main__":
@@ -39,10 +43,11 @@ if __name__ == "__main__":
         required=True,
         help="Which test dataset."
     )
+    parser.add_argument("--batch-size", type=int, required=True)
     args = parser.parse_args()
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    checkpoint = torch.load(f"trained_models/{args.model}_{args.dataset}_model.pth", map_location=device)
+    checkpoint = torch.load(f"./trained_models/{args.model}_{args.dataset}_model.pth", map_location=device)
     if args.model == "ddpm":
         model = ddpm.ddpm.DDPM(
             beta=checkpoint["beta"],
@@ -53,17 +58,20 @@ if __name__ == "__main__":
             resample_with_conv=checkpoint["resample_with_conv"],
         )
     elif args.model == "vae":
-        model = vae.vae.VAE(
-            in_channels=checkpoint["in_channels"],
+        model = vae.VAE(
+            in_ch=checkpoint["in_ch"],
             in_dim=checkpoint["in_dim"],
             latent_dim=checkpoint["latent_dim"],
         )
     else:
         raise ValueError(f"Unsupported model: {args.model}")
-    
+    model.to(device)
+
     if args.dataset == "cifar10":
         dataset = data.CIFAR10_1()
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
-    
-    evaluate(model, dataset, device)
+
+    n_samples = 1000
+    real_images = next(iter(DataLoader(dataset, batch_size=n_samples, shuffle=True)))
+    evaluate(model, real_images, args.batch_size, device)
