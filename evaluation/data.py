@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as T
-from torch.utils.data import Dataset
+from torch.utils.data import Dataset, ConcatDataset
 import os, requests
 
 class CIFAR10_1(Dataset):
@@ -38,7 +38,7 @@ class CIFAR10_1(Dataset):
 
         imgs = np.load(data_path)     # (N,32,32,3) uint8
         labels = np.load(labels_path) # (N,)
-        self.images = torch.from_numpy(imgs).permute(0,3,1,2).to(torch.float64) / 255.0
+        self.images = torch.from_numpy(imgs).permute(0,3,1,2).float() / 255.0
         self.labels = torch.from_numpy(labels.astype(np.int64))
 
     def _download(self, url, path):
@@ -67,7 +67,10 @@ class CIFAR10(Dataset):
         self.transform = T.Compose([
             T.ToTensor(),
         ])
-        self.dataset = datasets.CIFAR10(root='./data', train=False, download=True, transform=self.transform)
+        self.dataset = ConcatDataset([
+            datasets.CIFAR10(root='./data', train=True, download=True, transform=self.transform),
+            datasets.CIFAR10(root='./data', train=False, download=True, transform=self.transform),
+        ])
 
     def __getitem__(self, index):
         item, _ = self.dataset[index] # Discard labels

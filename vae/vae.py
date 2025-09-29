@@ -131,6 +131,7 @@ class VAE(nn.Module):
     @torch.inference_mode()
     def sample(self, batch_size):
         '''Sample a batch from the learned data distribution.'''
+        self.decoder.eval()
         device = next(self.decoder.parameters()).device
         noise = torch.randn(batch_size, self.latent_dim).to(device)
         samples = self.decode(noise)

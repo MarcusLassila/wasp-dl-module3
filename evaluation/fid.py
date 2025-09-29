@@ -12,24 +12,20 @@ from tqdm.auto import tqdm
 import argparse
 
 def fid_score(model, data_loader, device):
-    fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
-    total_samples = 0
+    fid = FrechetInceptionDistance(feature=2048, normalize=True)
+    fid = fid.set_dtype(torch.float64)
     for real_samples in tqdm(data_loader, desc="Generate samples"):
         batch_size = real_samples.shape[0]
-        total_samples += batch_size
-        real_samples = real_samples.to(torch.float64).to(device)
-        real_samples = F.interpolate(real_samples, size=(299,299), mode="bilinear", align_corners=False)
-        gen_samples = model.sample(batch_size).to(torch.float64)
+        real_samples = real_samples.to(device)
+        gen_samples = model.sample(batch_size)
         if model.__class__.__name__ == "DDPM":
             gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
             gen_samples = (gen_samples + 1) / 2.0
-        gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
         fid.update(real_samples, real=True)
         fid.update(gen_samples, real=False)
     print("Computing FID...")
     score = fid.compute()
     print(f"FID score: {score:.5f}")
-    print(f"Total samples: {total_samples}")
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
@@ -43,7 +39,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "-d", "--dataset",
         type=str,
-        choices=["cifar10"],
+        choices=["cifar10", "cifar10.1"],
         required=True,
         help="Which test dataset."
     )
@@ -52,7 +48,7 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    checkpoint = torch.load(f"./trained_models/{args.model}_{args.dataset}_model.pth", map_location=device)
+    checkpoint = torch.load(f"./trained_models/{args.model}_cifar10_model.pth", map_location=device)
     if args.model == "ddpm":
         model = ddpm.DDPM(
             beta=checkpoint["beta"],
@@ -72,14 +68,14 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unsupported model: {args.model}")
 
-    if args.dataset == "cifar10":
+    if args.dataset == "cifar10.1":
         dataset = data.CIFAR10_1()
-    elif args.dataset == "cifar10-test":
+    elif args.dataset == "cifar10":
         dataset = data.CIFAR10()
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
-    n_samples = 2000
+    n_samples = 50000
     dataset = Subset(dataset, torch.arange(n_samples))
     data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     fid_score(model, data_loader, device)
