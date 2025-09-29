@@ -1,5 +1,5 @@
 import data
-from ddpm import ddpm
+from ddpm import ddpm, utils
 from vae import vae
 
 import torch
@@ -25,7 +25,8 @@ def fid_score(model, data_loader, device):
         total_samples += batch_size
         real_samples = real_samples.to(torch.float64).to(device)
         real_samples = F.interpolate(real_samples, size=(299,299), mode="bilinear", align_corners=False)
-        gen_samples = model.sample(batch_size)
+        gen_samples = model.sample(batch_size).to(torch.float64)
+        utils.plot_images(gen_samples[:16], name="temp_fid_samples")
         gen_samples = sample_transformation(model.__class__.__name__, gen_samples)
         gen_samples = F.interpolate(gen_samples, size=(299,299), mode="bilinear", align_corners=False)
         fid.update(real_samples, real=True)
