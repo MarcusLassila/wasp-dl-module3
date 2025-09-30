@@ -15,7 +15,7 @@ import argparse
 def fid_score(model, dataloader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True)
     fid = fid.set_dtype(torch.float64)
-    for real_samples in tqdm(dataloader, desc="Generate samples"):
+    for real_samples in tqdm(dataloader, desc="Generating samples for FID"):
         batch_size = real_samples.shape[0]
         real_samples = real_samples.to(device)
         gen_samples = model.sample(batch_size)
@@ -28,7 +28,7 @@ def fid_score(model, dataloader, device):
 def inception_score(model, n_samples, batch_size):
     is_metric = InceptionScore(normalize=True).to(device)
     n_batches, remainder = divmod(n_samples, batch_size)
-    for _ in range(n_batches):
+    for _ in tqdm(range(n_batches), desc="Generating samples for inception score"):
         samples = model.sample(batch_size)
         is_metric.update(samples)
     samples = model.sample(remainder)
