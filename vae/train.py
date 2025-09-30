@@ -1,5 +1,6 @@
 import torch
 from torch.optim import AdamW
+from torch.optim.lr_scheduler import CosineAnnealingLR
 from tqdm.auto import tqdm
 from pathlib import Path
 import time
@@ -7,6 +8,7 @@ import time
 def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weight_decay=1e-4):
     model.to(device)
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
+    scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-5)
     train_loss = []
     val_loss = []
     train_time = time.time()
@@ -27,6 +29,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
             avg_step_time += t1 - t0
             t0 = time.time()
         train_loss.append(acc_train_loss / len(train_dataloader))
+        scheduler.step()
         avg_step_time /= len(train_dataloader)
 
         model.eval()

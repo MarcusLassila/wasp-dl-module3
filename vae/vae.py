@@ -9,17 +9,17 @@ class ResBlockDown(nn.Module):
         self.residual_connection = nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=1, stride=2, padding=0)
         self.conv_block = nn.Sequential(
             nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(num_features=out_ch),
-            nn.ReLU(),
+            nn.GroupNorm(num_groups=32, num_channels=out_ch),
+            nn.SiLU(),
             nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(num_features=out_ch),
-            nn.ReLU(),
+            nn.GroupNorm(num_groups=32, num_channels=out_ch),
+            nn.SiLU(),
             nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=2, padding=1) # Downsample
         )
 
     def forward(self, x):
         x = self.conv_block(x) + self.residual_connection(x)
-        return F.relu(x)
+        return x
 
 class ResBlockUp(nn.Module):
     
@@ -31,26 +31,26 @@ class ResBlockUp(nn.Module):
         )
         self.conv_block = nn.Sequential(
             nn.Conv2d(in_channels=in_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(num_features=out_ch),
-            nn.ReLU(),
+            nn.GroupNorm(num_groups=32, num_channels=out_ch),
+            nn.SiLU(),
             nn.Conv2d(in_channels=out_ch, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
-            nn.BatchNorm2d(num_features=out_ch),
-            nn.ReLU(),
+            nn.GroupNorm(num_groups=32, num_channels=out_ch),
+            nn.SiLU(),
             nn.Upsample(scale_factor=2, mode="nearest"),
         )
 
     def forward(self, x):
         x = self.conv_block(x) + self.residual_connection(x)
-        return F.relu(x)
+        return x
 
 class Encoder(nn.Module):
 
     def __init__(self, in_ch, in_dim, latent_dim):
         super().__init__()
         self.conv_emb = nn.Sequential(
-            nn.Conv2d(in_channels=in_ch, out_channels=32, kernel_size=3, stride=1, padding=1),
-            ResBlockDown(in_ch=32, out_ch=64),
+            nn.Conv2d(in_channels=in_ch, out_channels=64, kernel_size=3, stride=1, padding=1),
             ResBlockDown(in_ch=64, out_ch=128),
+            ResBlockDown(in_ch=128, out_ch=128),
             ResBlockDown(in_ch=128, out_ch=256),
             nn.Flatten(),
         )
@@ -73,9 +73,9 @@ class Decoder(nn.Module):
         self.latent_proj = nn.Linear(latent_dim, hidden_dim)
         self.residual_block = nn.Sequential(
             ResBlockUp(in_ch=256, out_ch=128),
+            ResBlockUp(in_ch=128, out_ch=128),
             ResBlockUp(in_ch=128, out_ch=64),
-            ResBlockUp(in_ch=64, out_ch=32),
-            nn.Conv2d(in_channels=32, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
+            nn.Conv2d(in_channels=64, out_channels=out_ch, kernel_size=3, stride=1, padding=1),
             nn.Sigmoid(),
         )
 

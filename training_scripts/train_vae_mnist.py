@@ -3,8 +3,8 @@ from vae import data, vae, train
 import torch
 from torch.utils.data import DataLoader
 
-batch_size = 2048
-epochs = 300
+batch_size = 512
+epochs = 500
 lr = 1e-3
 latent_dim = 128
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
