@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, Subset
 import torch.nn.functional as F
 import torchvision.transforms as T
 from torchmetrics.image.fid import FrechetInceptionDistance
+from torchmetrics.image.inception import InceptionScore
 from tqdm.auto import tqdm
 
 import argparse
@@ -18,31 +19,54 @@ def fid_score(model, dataloader, device):
         batch_size = real_samples.shape[0]
         real_samples = real_samples.to(device)
         gen_samples = model.sample(batch_size)
-        if model.__class__.__name__ == "DDPM":
-            # Transform to [0,1]
-            gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
-            gen_samples = (gen_samples + 1) / 2.0
         fid.update(real_samples, real=True)
         fid.update(gen_samples, real=False)
     print("Computing FID...")
     score = fid.compute()
     print(f"FID score: {score:.5f}")
 
+def inception_score(model, n_samples, batch_size):
+    is_metric = InceptionScore(normalize=True).to(device)
+    n_batches, remainder = divmod(n_samples, batch_size)
+    for _ in range(n_batches):
+        samples = model.sample(batch_size)
+        is_metric.update(samples)
+    samples = model.sample(remainder)
+    is_metric.update(samples)
+    print("Computing IS...")
+    mean, std = is_metric.compute()
+    print(f"Inception Score: {mean.item():.5f} ± {std.item():.5f}")
+
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "-m", "--model",
+        "--metric",
+        type=str,
+        choices=["fid", "is"],
+        required=True,
+        help="Which metric to use."
+    )
+    parser.add_argument(
+        "--model",
         type=str,
         choices=["ddpm", "vae"],
         required=True,
         help="Which model to evaluate."
     )
     parser.add_argument(
-        "-d", "--dataset",
+        "--dataset",
         type=str,
-        choices=["cifar10", "cifar10.1"],
-        required=True,
-        help="Which test dataset."
+        choices=["cifar10-train", "cifar10-test", "cifar10.1"],
+        default="cifar10-test",
+        required=False,
+        help="Which real example dataset to use for FID."
+    )
+    parser.add_argument(
+        "--n-samples",
+        type=int,
+        default=10000,
+        required=False,
+        help="Number of samples to evaluate (limited by len(dataset) in case of FID)."
     )
     parser.add_argument("--batch-size", type=int, required=True)
     args = parser.parse_args()
@@ -71,14 +95,19 @@ if __name__ == "__main__":
     else:
         raise ValueError(f"Unsupported model: {args.model}")
 
-    if args.dataset == "cifar10.1":
-        dataset = data.CIFAR10_1()
-    elif args.dataset == "cifar10":
-        dataset = data.CIFAR10(train=False)
-    else:
-        raise ValueError(f"Unsupported dataset: {args.dataset}")
+    if args.metric == "is":
+        inception_score(model, args.n_samples, args.batch_size)
+    else: # FID
+        if args.dataset == "cifar10-test":
+            dataset = data.CIFAR10(train=False)
+        elif args.dataset == "cifar10-train":
+            dataset = data.CIFAR10(train=True)
+        elif args.dataset == "cifar10.1":
+            dataset = data.CIFAR10_1()
+        else:
+            raise ValueError(f"Unsupported dataset: {args.dataset}")
 
-    n_samples = min(10000, len(dataset))
-    dataset = Subset(dataset, torch.arange(n_samples))
-    data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
-    fid_score(model, data_loader, device)
+        n_samples = min(args.n_samples, len(dataset))
+        dataset = Subset(dataset, torch.arange(n_samples))
+        data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=False)
+        fid_score(model, data_loader, device)

@@ -159,6 +159,7 @@ class DDPM:
 
     @torch.inference_mode()
     def sample(self, batch_size):
+        ''' Sample a batch of images and rescale them to floating point values in [0,1]. '''
         self.model.eval()
         x = torch.randn(batch_size, *self.image_dim).to(self.device)
         for t in tqdm(range(self.T - 1, -1, -1), desc=f"Sampling {batch_size} images"):
@@ -169,4 +170,6 @@ class DDPM:
             sigma_t = torch.sqrt(self.beta[t])
             noise_pred = self.model(x, t * torch.ones(batch_size, dtype=torch.long).to(self.device))
             x = (x - self.beta[t] * noise_pred / torch.sqrt(1 - self.alpha_bar[t])) / torch.sqrt(1 - self.beta[t]) + sigma_t * z
+        x = (x + 1.0) / 2.0
+        x = torch.clamp(x, 0.0, 1.0)
         return x

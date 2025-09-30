@@ -5,21 +5,12 @@ import matplotlib.pyplot as plt
 import argparse
 from pathlib import Path
 
-def plot_images(images, rescale_method="clamp", name="temp_image"):
+def plot_images(images, name="temp_image"):
     # Create the 4x4 grid
     fig, axes = plt.subplots(4, 4, figsize=(6, 6))
     axes = axes.flatten()
 
     for img, ax in zip(images, axes):
-        if rescale_method == "tanh":
-            img = torch.tanh(img)
-        elif rescale_method == "clamp":
-            img = torch.clamp(img, -1.0, 1.0)
-        elif rescale_method == "none":
-            pass
-        else:
-            raise ValueError("Unsupported rescale method")
-        img = (img + 1) / 2
         img = img.permute(1, 2, 0)
         ax.imshow(img)
         ax.axis("off")
