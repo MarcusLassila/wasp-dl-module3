@@ -9,6 +9,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     train_loss = []
     val_loss = []
+    train_time = time.time()
     for epoch in range(1, epochs + 1):
         t0 = time.time()
         model.train()
@@ -54,3 +55,5 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
         }
         Path("./trained_models").mkdir(parents=True, exist_ok=True)
         torch.save(model_checkpoint, f"./trained_models/vae_{train_dataloader.dataset.__class__.__name__.lower()}_model_latest.pth")
+    train_time = time.time()
+    print(f"Total train time: {train_time}")
