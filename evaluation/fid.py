@@ -11,14 +11,15 @@ from tqdm.auto import tqdm
 
 import argparse
 
-def fid_score(model, data_loader, device):
+def fid_score(model, dataloader, device):
     fid = FrechetInceptionDistance(feature=2048, normalize=True)
     fid = fid.set_dtype(torch.float64)
-    for real_samples in tqdm(data_loader, desc="Generate samples"):
+    for real_samples in tqdm(dataloader, desc="Generate samples"):
         batch_size = real_samples.shape[0]
         real_samples = real_samples.to(device)
         gen_samples = model.sample(batch_size)
         if model.__class__.__name__ == "DDPM":
+            # Transform to [0,1]
             gen_samples = torch.clamp(gen_samples, -1.0, 1.0)
             gen_samples = (gen_samples + 1) / 2.0
         fid.update(real_samples, real=True)
@@ -58,6 +59,7 @@ if __name__ == "__main__":
             dropout=checkpoint["dropout"],
             resample_with_conv=checkpoint["resample_with_conv"],
         )
+        model.load(checkpoint["model_state_dict"])
     elif args.model == "vae":
         model = vae.VAE(
             in_ch=checkpoint["in_ch"],
@@ -65,17 +67,18 @@ if __name__ == "__main__":
             latent_dim=checkpoint["latent_dim"],
         )
         model.to(device)
+        model.load_state_dict(checkpoint["model_state_dict"])
     else:
         raise ValueError(f"Unsupported model: {args.model}")
 
     if args.dataset == "cifar10.1":
         dataset = data.CIFAR10_1()
     elif args.dataset == "cifar10":
-        dataset = data.CIFAR10()
+        dataset = data.CIFAR10(train=False)
     else:
         raise ValueError(f"Unsupported dataset: {args.dataset}")
 
-    n_samples = 50000
+    n_samples = min(10000, len(dataset))
     dataset = Subset(dataset, torch.arange(n_samples))
     data_loader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
     fid_score(model, data_loader, device)

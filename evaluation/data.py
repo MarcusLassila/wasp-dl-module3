@@ -2,7 +2,7 @@ import numpy as np
 import torch
 import torchvision.datasets as datasets
 import torchvision.transforms as T
-from torch.utils.data import Dataset, ConcatDataset
+from torch.utils.data import Dataset
 import os, requests
 
 class CIFAR10_1(Dataset):
@@ -63,14 +63,11 @@ class CIFAR10_1(Dataset):
 class CIFAR10(Dataset):
     '''Test set of CIFAR10'''
 
-    def __init__(self):
+    def __init__(self, train=True):
         self.transform = T.Compose([
             T.ToTensor(),
         ])
-        self.dataset = ConcatDataset([
-            datasets.CIFAR10(root='./data', train=True, download=True, transform=self.transform),
-            datasets.CIFAR10(root='./data', train=False, download=True, transform=self.transform),
-        ])
+        self.dataset = datasets.CIFAR10(root='./data', train=train, download=True, transform=self.transform)
 
     def __getitem__(self, index):
         item, _ = self.dataset[index] # Discard labels
