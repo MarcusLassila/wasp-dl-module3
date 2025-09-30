@@ -4,8 +4,8 @@ import torch
 from torch.utils.data import DataLoader
 
 batch_size = 256
-epochs = 200
-lr = 1e-3
+epochs = 1000
+lr = 2e-4
 latent_dim = 128
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 print(f"Using device: {device}")

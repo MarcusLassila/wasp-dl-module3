@@ -5,10 +5,11 @@ from tqdm.auto import tqdm
 from pathlib import Path
 import time
 
-def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weight_decay=1e-4):
+def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weight_decay=0.01):
     model.to(device)
+    total_steps = len(train_dataloader) * epochs
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
-    scheduler = CosineAnnealingLR(optimizer, T_max=epochs, eta_min=1e-5)
+    scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6)
     train_loss = []
     val_loss = []
     train_time = time.time()
@@ -23,14 +24,13 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
             loss = model.loss(x)
             loss.backward()
             optimizer.step()
+            scheduler.step()
             loss_item = loss.item()
             acc_train_loss += loss_item
             t1 = time.time()
             avg_step_time += t1 - t0
             t0 = time.time()
-        scheduler.step()
         train_loss.append(acc_train_loss / len(train_dataloader))
-        scheduler.step()
         avg_step_time /= len(train_dataloader)
 
         model.eval()
