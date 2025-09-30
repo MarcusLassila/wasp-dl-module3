@@ -28,6 +28,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
             t1 = time.time()
             avg_step_time += t1 - t0
             t0 = time.time()
+        scheduler.step()
         train_loss.append(acc_train_loss / len(train_dataloader))
         scheduler.step()
         avg_step_time /= len(train_dataloader)
@@ -46,6 +47,7 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
             f"train loss: {train_loss[-1]:.6f}",
             f"val loss {val_loss[-1]:.6f}",
             f"step time: {avg_step_time:.4f}",
+            f"lr: {optimizer.param_groups[0]['lr']:.5f}"
         ])
         print(log_msg, flush=True)
         model_checkpoint = {
