@@ -13,7 +13,7 @@ from tqdm.auto import tqdm
 import argparse
 
 def fid_score(model, dataloader, device):
-    fid = FrechetInceptionDistance(feature=2048, normalize=True)
+    fid = FrechetInceptionDistance(feature=2048, normalize=True).to(device)
     fid = fid.set_dtype(torch.float64)
     for real_samples in tqdm(dataloader, desc="Generating samples for FID"):
         batch_size = real_samples.shape[0]
