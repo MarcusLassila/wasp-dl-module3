@@ -162,7 +162,7 @@ class DDPM:
         ''' Sample a batch of images and rescale them to floating point values in [0,1]. '''
         self.model.eval()
         x = torch.randn(batch_size, *self.image_dim).to(self.device)
-        for t in tqdm(range(self.T - 1, -1, -1), disable=disable_tqdm, desc=f"Sampling {batch_size} images"):
+        for t in tqdm(range(self.T - 1, -1, -1), disable=disable_tqdm, desc=f"Sampling {batch_size} images on {self.device}"):
             if t > 0:
                 z = torch.randn(batch_size, *self.image_dim).to(self.device)
             else:
