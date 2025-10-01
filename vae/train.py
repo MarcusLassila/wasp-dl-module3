@@ -10,9 +10,12 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
     total_steps = len(train_dataloader) * epochs
     optimizer = AdamW(model.parameters(), lr=lr, weight_decay=weight_decay)
     scheduler = CosineAnnealingLR(optimizer, T_max=total_steps, eta_min=1e-6)
+    early_stopping_counter = 0
+    early_stopping_threshold = 50
     train_loss = []
     val_loss = []
-    train_time = time.time()
+    min_val_loss = torch.inf
+    total_time = time.time()
     for epoch in range(1, epochs + 1):
         t0 = time.time()
         model.train()
@@ -47,18 +50,26 @@ def train_vae(model, train_dataloader, val_dataloader, epochs, device, lr, weigh
             f"train loss: {train_loss[-1]:.6f}",
             f"val loss {val_loss[-1]:.6f}",
             f"step time: {avg_step_time:.4f}",
-            f"lr: {optimizer.param_groups[0]['lr']:.5f}"
+            f"lr: {optimizer.param_groups[0]['lr']:.7f}"
         ])
         print(log_msg, flush=True)
-        model_checkpoint = {
-            "model_state_dict": model.state_dict(),
-            "in_ch": model.in_ch,
-            "in_dim": model.in_dim,
-            "latent_dim": model.latent_dim,
-            "train_loss": train_loss,
-            "val_loss": val_loss,
-        }
-        Path("./trained_models").mkdir(parents=True, exist_ok=True)
-        torch.save(model_checkpoint, f"./trained_models/vae_{train_dataloader.dataset.__class__.__name__.lower()}_model_latest.pth")
-    train_time = time.time()
-    print(f"Total train time: {train_time}")
+        if val_loss[-1] < min_val_loss:
+            early_stopping_counter = 0
+            min_val_loss = val_loss[-1]
+            model_checkpoint = {
+                "model_state_dict": model.state_dict(),
+                "in_ch": model.in_ch,
+                "in_dim": model.in_dim,
+                "latent_dim": model.latent_dim,
+                "train_loss": train_loss,
+                "val_loss": val_loss,
+            }
+            Path("./trained_models").mkdir(parents=True, exist_ok=True)
+            torch.save(model_checkpoint, f"./trained_models/vae_{train_dataloader.dataset.__class__.__name__.lower()}_model_latest.pth")
+        else:
+            early_stopping_counter += 1
+        if early_stopping_counter == early_stopping_threshold:
+            print(f"Early stopping at epoch={epoch}")
+            break
+    total_time = time.time() - total_time
+    print(f"Total train time: {total_time}")
